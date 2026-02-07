@@ -1,55 +1,53 @@
 import axios from 'axios';
 
-const BASE_URL = 'https://cricketdataapi.com/api/matches';
+const baseURL = 'https://api.cricapi.com/v1';
+const CRICKETDATA_API_KEY = process.env.CRICKETDATA_API_KEY;
+const CRICKETDATA_SERIES_ID = process.env.CRICKETDATA_SERIES_ID;
 
-async function fetchMatches() {
+const fetchMatches = async () => {
     try {
-        const response = await axios.get(`${BASE_URL}`);
+        const response = await axios.get(`${baseURL}/matches`, {
+            headers: {
+                'apikey': CRICKETDATA_API_KEY,
+            },
+            params: {
+                seriesId: CRICKETDATA_SERIES_ID
+            }
+        });
         return response.data;
     } catch (error) {
         console.error('Error fetching matches:', error);
         throw error;
     }
-}
+};
 
-async function fetchScorecard(matchId: string) {
-    try {
-        const response = await axios.get(`${BASE_URL}/${matchId}/scorecard`);
-        return response.data;
-    } catch (error) {
-        console.error(`Error fetching scorecard for match ${matchId}:`, error);
-        throw error;
-    }
-}
-
-function filterMatchesBySeries(matches: any[], seriesId: string) {
-    return matches.filter(match => match.seriesId === seriesId);
-}
-
-function isMatchCompleted(match: any) {
-    return match.status === 'completed';
-}
-
-async function retryApiCall(apiCall: () => Promise<any>, retries: number = 3): Promise<any> {
-    for (let i = 0; i < retries; i++) {
+const fetchScorecard = async (matchId) => {
+    let attempts = 0;
+    while (attempts < 3) {
         try {
-            return await apiCall();
+            const response = await axios.get(`${baseURL}/scorecard/${matchId}`, {
+                headers: {
+                    'apikey': CRICKETDATA_API_KEY,
+                }
+            });
+            return response.data;
         } catch (error) {
-            if (i === retries - 1) throw error;
+            attempts++;
+            console.warn(`Attempt ${attempts} failed. Retrying...`);
+            if (attempts === 3) {
+                console.error('Error fetching scorecard:', error);
+                throw error;
+            }
         }
     }
-}
-
-function extractMatchTime(match: any): string {
-    const matchTime = new Date(match.date_time);
-    return matchTime.toISOString();
-}
-
-export {
-    fetchMatches,
-    fetchScorecard,
-    filterMatchesBySeries,
-    isMatchCompleted,
-    retryApiCall,
-    extractMatchTime,
 };
+
+const isMatchCompleted = (match) => {
+    return match.status === 'completed';
+};
+
+const filterSeries = (matches) => {
+    return matches.filter(match => match.seriesId === CRICKETDATA_SERIES_ID);
+};
+
+export { fetchMatches, fetchScorecard, filterSeries, isMatchCompleted };
