@@ -1,12 +1,310 @@
-import fetch from 'node-fetch';
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { createRequire } from "node:module";
 
-export async function GET(request: Request) {
-    const response = await fetch('https://external-api.com/cricket'); // Replace with the actual external API endpoint
-    const data = await response.json();
+const require = createRequire(import.meta.url);
 
-    // Here you would typically process and sync the data into your database
-    // For example:
-    // await saveCricketData(data);
+// Import CommonJS scoring module from TS route
+const {
+  computePlayerPointsFromScorecard,
+  normalizeMatchScorecardToPlayerStats,
+} = require("../../../lib/scoring/dream11_t20");
 
-    return new Response(JSON.stringify(data), { status: 200 });
+// ---- Supabase server client (service role) ----
+function supabaseServer() {
+  const url = process.env.SUPABASE_URL!;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  return createClient(url, key, { auth: { persistSession: false } });
+}
+
+// ---- CricketData helpers ----
+const CRIC_BASE = "https://api.cricapi.com/v1";
+
+async function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function fetchJsonWithRetry(url: string, tries = 3) {
+  let lastErr: any;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+      return await res.json();
+    } catch (e) {
+      lastErr = e;
+      await sleep(250 * Math.pow(2, i));
+    }
+  }
+  throw lastErr;
+}
+
+async function fetchMatches() {
+  const apikey = process.env.CRICKETDATA_API_KEY!;
+  const url = `${CRIC_BASE}/matches?apikey=${apikey}&offset=0`;
+  const json = await fetchJsonWithRetry(url);
+  return json?.data ?? [];
+}
+
+async function fetchScorecard(matchId: string) {
+  const apikey = process.env.CRICKETDATA_API_KEY!;
+  const url = `${CRIC_BASE}/match_scorecard?apikey=${apikey}&offset=0&id=${encodeURIComponent(
+    matchId
+  )}`;
+  return await fetchJsonWithRetry(url);
+}
+
+function isCompletedMatch(m: any) {
+  const status = String(m?.status ?? "").toLowerCase();
+  return m?.matchEnded === true || status.includes("ended") || status.includes("completed");
+}
+
+function getStartTimeISO(m: any): string | null {
+  // CricketData frequently uses dateTimeGMT for match time
+  const t =
+    m?.dateTimeGMT ||
+    m?.dateTime ||
+    m?.date ||
+    m?.matchDateTime ||
+    m?.timestamp ||
+    null;
+  if (!t) return null;
+
+  const d = new Date(t);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+function seriesFilter(matches: any[]) {
+  const seriesId = process.env.CRICKETDATA_SERIES_ID!;
+  return matches.filter((m) => m?.series?.id === seriesId);
+}
+
+// ---- Auth helper ----
+function assertAdminKey(key: string | null) {
+  if (!key || key !== process.env.ADMIN_KEY) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  return null;
+}
+
+// ---- Sync core ----
+async function runSync() {
+  const supabase = supabaseServer();
+
+  // 1) last sync time
+  const { data: stateRow, error: stateErr } = await supabase
+    .from("sync_state")
+    .select("last_completed_match_time")
+    .eq("id", 1)
+    .maybeSingle();
+
+  if (stateErr) throw new Error(stateErr.message);
+
+  const last = stateRow?.last_completed_match_time
+    ? new Date(stateRow.last_completed_match_time).getTime()
+    : 0;
+
+  // 2) fetch matches and filter to WC series
+  const all = await fetchMatches();
+  const wc = seriesFilter(all);
+
+  // 3) filter completed and sort by start time
+  const completed = wc
+    .filter(isCompletedMatch)
+    .map((m: any) => ({
+      raw: m,
+      id: String(m.id),
+      startTimeISO: getStartTimeISO(m),
+    }))
+    .filter((m: any) => !!m.startTimeISO)
+    .sort((a: any, b: any) => new Date(a.startTimeISO).getTime() - new Date(b.startTimeISO).getTime());
+
+  // 4) process matches after last sync boundary
+  const toProcess = completed.filter((m: any) => new Date(m.startTimeISO).getTime() > last);
+
+  let processed = 0;
+  let maxTime = last;
+
+  // Fetch all fantasy teams once
+  const { data: teams, error: teamsErr } = await supabase.from("fantasy_teams").select("id");
+  if (teamsErr) throw new Error(teamsErr.message);
+
+  for (const m of toProcess) {
+    const matchId = m.id;
+    const startTimeISO: string = m.startTimeISO;
+
+    // Fetch scorecard
+    const scorecard = await fetchScorecard(matchId);
+
+    // Build per-player aggregated stats, then compute points per player
+    const playerStatsMap: Record<string, any> =
+      normalizeMatchScorecardToPlayerStats(scorecard) || {};
+
+    // Build rows for players + player_match_points
+    const playerIds = Object.keys(playerStatsMap);
+
+    // Upsert players table (display_name = key for now)
+    if (playerIds.length > 0) {
+      const playersUpsert = playerIds.map((pid) => ({
+        api_player_id: pid,
+        display_name: pid,
+      }));
+
+      const { error: pErr } = await supabase.from("players").upsert(playersUpsert);
+      if (pErr) throw new Error(pErr.message);
+    }
+
+    const playerMatchRows = playerIds.map((pid) => {
+      const stats = playerStatsMap[pid];
+      const pts = computePlayerPointsFromScorecard(stats);
+      return {
+        api_match_id: matchId,
+        api_player_id: pid,
+        points: pts,
+        breakdown: stats,
+      };
+    });
+
+    // Upsert match metadata first
+    const teamA = Array.isArray(m.raw?.teams) ? String(m.raw.teams[0] ?? "") : "";
+    const teamB = Array.isArray(m.raw?.teams) ? String(m.raw.teams[1] ?? "") : "";
+    const status = String(m.raw?.status ?? "");
+    const resultText = String(m.raw?.result ?? "");
+
+    const { error: matchErr } = await supabase.from("matches").upsert({
+      api_match_id: matchId,
+      match_date: startTimeISO.slice(0, 10),
+      start_time: startTimeISO,
+      completed_at: startTimeISO, // We don’t have reliable completion time; start time is OK for ordering boundary
+      team_a: teamA,
+      team_b: teamB,
+      status,
+      result: resultText,
+      last_synced_at: new Date().toISOString(),
+    });
+
+    if (matchErr) throw new Error(matchErr.message);
+
+    // Upsert player_match_points
+    if (playerMatchRows.length > 0) {
+      const { error: pmpErr } = await supabase.from("player_match_points").upsert(playerMatchRows);
+      if (pmpErr) throw new Error(pmpErr.message);
+    }
+
+    // Prepare quick lookup: player -> points
+    const pointsByPlayer = new Map<string, number>();
+    for (const row of playerMatchRows) pointsByPlayer.set(row.api_player_id, Number(row.points || 0));
+
+    // Roll up team match points
+    for (const t of teams || []) {
+      const teamId = Number(t.id);
+
+      // Fetch roster rows (we filter active in code)
+      const { data: roster, error: rosterErr } = await supabase
+        .from("fantasy_team_players")
+        .select("api_player_id,is_captain,is_vicecaptain,effective_from_time,effective_to_time")
+        .eq("fantasy_team_id", teamId);
+
+      if (rosterErr) throw new Error(rosterErr.message);
+
+      const activeRoster = (roster || []).filter((r: any) => {
+        const fromOk =
+          !r.effective_from_time || new Date(r.effective_from_time).getTime() <= new Date(startTimeISO).getTime();
+        const toOk =
+          !r.effective_to_time || new Date(startTimeISO).getTime() < new Date(r.effective_to_time).getTime();
+        return fromOk && toOk;
+      });
+
+      let base = 0;
+      let captainPts = 0;
+      let vicePts = 0;
+
+      for (const r of activeRoster) {
+        const p = pointsByPlayer.get(String(r.api_player_id)) || 0;
+        base += p;
+        if (r.is_captain) captainPts = p;
+        if (r.is_vicecaptain) vicePts = p;
+      }
+
+      // Apply multipliers as bonus (2x captain => +1x extra, 1.5x vice => +0.5x extra)
+      const total = base + captainPts + vicePts * 0.5;
+
+      const { error: tmpErr } = await supabase.from("team_match_points").upsert({
+        api_match_id: matchId,
+        fantasy_team_id: teamId,
+        points: total,
+      });
+
+      if (tmpErr) throw new Error(tmpErr.message);
+    }
+
+    // advance boundary
+    processed += 1;
+    const tms = new Date(startTimeISO).getTime();
+    if (tms > maxTime) maxTime = tms;
+  }
+
+  // Recompute leaderboard_cache (simple and safe)
+  const { data: allTeamPoints, error: atpErr } = await supabase
+    .from("team_match_points")
+    .select("fantasy_team_id, points");
+
+  if (atpErr) throw new Error(atpErr.message);
+
+  const totals = new Map<number, number>();
+  for (const row of allTeamPoints || []) {
+    const id = Number(row.fantasy_team_id);
+    const pts = Number(row.points || 0);
+    totals.set(id, (totals.get(id) || 0) + pts);
+  }
+
+  for (const [teamId, totalPoints] of totals.entries()) {
+    const { error: lbErr } = await supabase.from("leaderboard_cache").upsert({
+      fantasy_team_id: teamId,
+      total_points: totalPoints,
+      last_updated: new Date().toISOString(),
+    });
+    if (lbErr) throw new Error(lbErr.message);
+  }
+
+  // Update sync_state boundary
+  if (processed > 0) {
+    const { error: ssErr } = await supabase
+      .from("sync_state")
+      .upsert({ id: 1, last_completed_match_time: new Date(maxTime).toISOString() });
+
+    if (ssErr) throw new Error(ssErr.message);
+  }
+
+  return { processed, boundaryISO: processed > 0 ? new Date(maxTime).toISOString() : stateRow?.last_completed_match_time ?? null };
+}
+
+// ---- Route handlers ----
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const key = searchParams.get("key");
+  const auth = assertAdminKey(key);
+  if (auth) return auth;
+
+  try {
+    const out = await runSync();
+    return NextResponse.json({ ok: true, ...out });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message ?? String(e) }, { status: 500 });
+  }
+}
+
+export async function POST(req: Request) {
+  const form = await req.formData();
+  const key = String(form.get("key") ?? "");
+  const auth = assertAdminKey(key);
+  if (auth) return auth;
+
+  try {
+    const out = await runSync();
+    return NextResponse.json({ ok: true, ...out });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message ?? String(e) }, { status: 500 });
+  }
 }
