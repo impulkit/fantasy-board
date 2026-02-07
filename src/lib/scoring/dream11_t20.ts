@@ -1,32 +1,23 @@
-// Dream11 T20 Scoring Rules Implementation
+// Dream11 T20 Scoring Rules
 
-class Dream11T20Scoring {
-    static calculatePlayerPoints(playerStats) {
-        let points = 0;
-
-        // Example scoring rules
-        points += playerStats.runs * 1; // 1 point per run
-        points += playerStats.fours * 1; // 1 point per four
-        points += playerStats.sixes * 2; // 2 points per six
-        points += playerStats.wickets * 25; // 25 points per wicket
-        points -= playerStats.oversBowled * 5; // 5 points deduction per over bowled
-        points += playerStats.catches * 10; // 10 points per catch
-        points += playerStats.stumpings * 10; // 10 points per stumping
-
-        return points;
-    }
-
-    static calculateTeamPoints(teamStats) {
-        let totalPoints = 0;
-
-        // Calculate total points based on players' points
-        for (const player of teamStats.players) {
-            totalPoints += this.calculatePlayerPoints(player);
-        }
-
-        return totalPoints;
-    }
+/**
+ * Computes the player points based on the scorecard for Dream11 T20
+ *
+ * @param {Object} scorecard - The scorecard object containing player stats.
+ * @returns {number} - The computed player points.
+ */
+function computePlayerPointsFromScorecard(scorecard) {
+    let points = 0;
+    points += scorecard.runs || 0; // runs +1
+    points += (scorecard.fours || 0) * 1; // four bonus +1
+    points += (scorecard.sixes || 0) * 2; // six bonus +2
+    points += (scorecard.wickets || 0) * 25; // wicket +25
+    points += (scorecard.maidens || 0) * 8; // maiden +8
+    points += (scorecard.catches || 0) * 8; // catch +8
+    points += (scorecard.stumpings || 0) * 12; // stumping +12
+    points += (scorecard.runouts || 0) * 6; // runout +6
+    return points;
 }
 
-// Export for external use
-export default Dream11T20Scoring;
+// Exporting the function for use in other modules
+module.exports = { computePlayerPointsFromScorecard };
