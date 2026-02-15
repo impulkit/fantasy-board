@@ -206,15 +206,19 @@ async function runSync(overrideLastSyncTime?: number) {
 
       const { data: roster, error: rosterErr } = await supabase
         .from("fantasy_team_players")
-        .select("player_id")
+        .select("player_id, is_captain, is_vicecaptain")
         .eq("fantasy_team_id", teamId);
 
       if (rosterErr) throw new Error(rosterErr.message);
 
       let total = 0;
       for (const r of roster || []) {
-        const p = pointsByPlayer.get(String(r.player_id)) || 0;
-        total += p;
+        const raw = pointsByPlayer.get(String(r.player_id)) || 0;
+        let mult = 1;
+        if (r.is_captain) mult = 2;
+        else if (r.is_vicecaptain) mult = 1.5;
+
+        total += raw * mult;
       }
 
       const { error: tmpErr } = await supabase.from("team_match_points").upsert({

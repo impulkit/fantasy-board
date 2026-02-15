@@ -417,6 +417,7 @@ async function runSeed(req: Request) {
 
             if (!tRow) continue;
 
+            // 5a) Calculate Total Points (Grand Total)
             let totalPoints = 0;
             for (const p of team.players) {
                 const pts = PLAYER_POINTS[p.name];
@@ -427,6 +428,24 @@ async function runSeed(req: Request) {
 
                     totalPoints += pts.reduce((s, v) => s + ((v || 0) * multiplier), 0);
                 }
+            }
+
+            // 5b) Populate team_match_points (Per Match)
+            const seededMatchIds = ["seed-match-1", "seed-match-2", "seed-match-3"];
+            for (let i = 0; i < 3; i++) {
+                let matchTotal = 0;
+                for (const p of team.players) {
+                    const rawPts = PLAYER_POINTS[p.name]?.[i] || 0;
+                    let mult = 1;
+                    if (CAPTAINS.has(p.name)) mult = 2;
+                    else if (VICE_CAPTAINS.has(p.name)) mult = 1.5;
+                    matchTotal += rawPts * mult;
+                }
+                await supabase.from("team_match_points").upsert({
+                    api_match_id: seededMatchIds[i],
+                    fantasy_team_id: tRow.id,
+                    points: matchTotal
+                }, { onConflict: "api_match_id,fantasy_team_id" });
             }
 
             await supabase.from("leaderboard_cache").upsert(
