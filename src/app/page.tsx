@@ -1,36 +1,41 @@
 import { createClient } from "@supabase/supabase-js";
 
-export const revalidate = 30; // ISR: revalidate every 30 seconds
+export const dynamic = 'force-dynamic';
 
 async function getLeaderboard() {
-    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-        console.warn("Supabase env vars not set — returning empty leaderboard");
+    try {
+        if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+            console.warn("Supabase env vars not set — returning empty leaderboard");
+            return [];
+        }
+
+        const supabase = createClient(
+            process.env.SUPABASE_URL,
+            process.env.SUPABASE_SERVICE_ROLE_KEY,
+            { auth: { persistSession: false } }
+        );
+
+        const { data, error } = await supabase
+            .from("leaderboard_cache")
+            .select("total_points, fantasy_team_id, last_updated, fantasy_teams(team_name, owner)")
+            .order("total_points", { ascending: false });
+
+        if (error) {
+            console.error("Leaderboard fetch error:", error.message);
+            return [];
+        }
+
+        return (data || []).map((row: any, i: number) => ({
+            rank: i + 1,
+            teamName: row.fantasy_teams?.team_name ?? `Team #${row.fantasy_team_id}`,
+            owner: row.fantasy_teams?.owner ?? "—",
+            points: Number(row.total_points || 0),
+            lastUpdated: row.last_updated,
+        }));
+    } catch (e) {
+        console.error("Leaderboard error:", e);
         return [];
     }
-
-    const supabase = createClient(
-        process.env.SUPABASE_URL,
-        process.env.SUPABASE_SERVICE_ROLE_KEY,
-        { auth: { persistSession: false } }
-    );
-
-    const { data, error } = await supabase
-        .from("leaderboard_cache")
-        .select("total_points, fantasy_team_id, last_updated, fantasy_teams(team_name, owner)")
-        .order("total_points", { ascending: false });
-
-    if (error) {
-        console.error("Leaderboard fetch error:", error.message);
-        return [];
-    }
-
-    return (data || []).map((row: any, i: number) => ({
-        rank: i + 1,
-        teamName: row.fantasy_teams?.team_name ?? `Team #${row.fantasy_team_id}`,
-        owner: row.fantasy_teams?.owner ?? "—",
-        points: Number(row.total_points || 0),
-        lastUpdated: row.last_updated,
-    }));
 }
 
 function getRankClass(rank: number) {

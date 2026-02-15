@@ -1,32 +1,38 @@
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 
-export const revalidate = 60;
+export const dynamic = 'force-dynamic';
 
 async function getStats() {
-    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-        return { teamCount: 0, playerCount: 0, matchCount: 0, lastSync: null };
+    const defaults = { teamCount: 0, playerCount: 0, matchCount: 0, lastSync: null };
+    try {
+        if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+            return defaults;
+        }
+
+        const supabase = createClient(
+            process.env.SUPABASE_URL,
+            process.env.SUPABASE_SERVICE_ROLE_KEY,
+            { auth: { persistSession: false } }
+        );
+
+        const [teamsRes, playersRes, matchesRes, syncRes] = await Promise.all([
+            supabase.from("fantasy_teams").select("id", { count: "exact", head: true }),
+            supabase.from("players").select("api_player_id", { count: "exact", head: true }),
+            supabase.from("matches").select("api_match_id", { count: "exact", head: true }),
+            supabase.from("sync_state").select("last_completed_match_time").eq("id", 1).maybeSingle(),
+        ]);
+
+        return {
+            teamCount: teamsRes.count ?? 0,
+            playerCount: playersRes.count ?? 0,
+            matchCount: matchesRes.count ?? 0,
+            lastSync: syncRes.data?.last_completed_match_time ?? null,
+        };
+    } catch (e) {
+        console.error("Admin stats error:", e);
+        return defaults;
     }
-
-    const supabase = createClient(
-        process.env.SUPABASE_URL,
-        process.env.SUPABASE_SERVICE_ROLE_KEY,
-        { auth: { persistSession: false } }
-    );
-
-    const [teamsRes, playersRes, matchesRes, syncRes] = await Promise.all([
-        supabase.from("fantasy_teams").select("id", { count: "exact", head: true }),
-        supabase.from("players").select("api_player_id", { count: "exact", head: true }),
-        supabase.from("matches").select("api_match_id", { count: "exact", head: true }),
-        supabase.from("sync_state").select("last_completed_match_time").eq("id", 1).maybeSingle(),
-    ]);
-
-    return {
-        teamCount: teamsRes.count ?? 0,
-        playerCount: playersRes.count ?? 0,
-        matchCount: matchesRes.count ?? 0,
-        lastSync: syncRes.data?.last_completed_match_time ?? null,
-    };
 }
 
 export default async function AdminPage() {
