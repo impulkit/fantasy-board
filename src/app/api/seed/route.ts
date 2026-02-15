@@ -313,6 +313,9 @@ async function runSeed(req: Request) {
         if (playersErr) throw new Error(`Players upsert: ${playersErr.message}`);
         log.push(`Upserted ${playerRows.length} players`);
 
+        const CAPTAINS = new Set(["Josh Inglis", "Travis Head", "Hardik Pandya", "Varun Chak", "Marco Jansen", "Abhishek Sharma", "Finn Allen", "Ishan Kishan"]);
+        const VICE_CAPTAINS = new Set(["Saim Ayub", "Ryan Rickelton", "Jasprit Bumrah", "Rahmanullah Gurbaz", "Glenn Phillips", "Quinton de Kock", "Jos Buttler", "Sahibzada Farhan"]);
+
         // 2) Create fantasy teams
         for (const team of TEAMS) {
             // Check if team exists
@@ -350,6 +353,8 @@ async function runSeed(req: Request) {
                         {
                             fantasy_team_id: teamId,
                             api_player_id: playerRow.api_player_id,
+                            is_captain: CAPTAINS.has(p.name),
+                            is_vicecaptain: VICE_CAPTAINS.has(p.name),
                             // auction_price: p.bid, // Commented out until schema migration applied
                         },
                         { onConflict: "fantasy_team_id,api_player_id" }
