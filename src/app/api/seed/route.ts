@@ -304,7 +304,6 @@ async function runSeed(req: Request) {
         const playerRows = Array.from(allPlayerNames).map((name) => ({
             api_player_id: name.toLowerCase().replace(/\s+/g, "-"),
             name,
-            country: "",
         }));
 
         const { error: playersErr } = await supabase
