@@ -148,27 +148,42 @@ export default async function TeamPage({ params }: { params: { id: string } }) {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                            {team.players.map((player) => (
-                                <tr key={player.playerId} className="hover:bg-white/5 transition-colors">
-                                    <td className="p-4 font-medium text-white">
-                                        {player.name}
-                                        {player.isCaptain && <span className="ml-2 px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-500 text-xs font-bold">C</span>}
-                                        {player.isViceCaptain && <span className="ml-2 px-2 py-0.5 rounded bg-blue-500/20 text-blue-500 text-xs font-bold">VC</span>}
-                                    </td>
-                                    <td className="p-4 text-center text-gray-400 text-sm">
-                                        {player.role === "PLAYER" ? "—" : player.role}
-                                    </td>
-                                    <td className="p-4 text-right text-gray-300">
-                                        {player.totalPoints}
-                                    </td>
-                                    <td className="p-4 text-right text-gray-400 text-sm">
-                                        {player.isCaptain ? "2x" : player.isViceCaptain ? "1.5x" : "1x"}
-                                    </td>
-                                    <td className="p-4 text-right font-bold text-primary">
-                                        {player.contributedPoints}
-                                    </td>
-                                </tr>
-                            ))}
+                            {team.players.map((player) => {
+                                let rowClass = "hover:bg-white/5 transition-colors border-b border-white/5 last:border-0";
+                                let nameClass = "font-medium text-white";
+                                let badge = null;
+
+                                if (player.isCaptain) {
+                                    rowClass += " bg-blue-500/10 hover:bg-blue-500/20";
+                                    nameClass = "font-bold text-blue-400";
+                                    badge = <span className="ml-2 px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 text-xs font-bold border border-blue-500/30">C</span>;
+                                } else if (player.isViceCaptain) {
+                                    rowClass += " bg-green-500/10 hover:bg-green-500/20";
+                                    nameClass = "font-bold text-green-400";
+                                    badge = <span className="ml-2 px-2 py-0.5 rounded bg-green-500/20 text-green-400 text-xs font-bold border border-green-500/30">VC</span>;
+                                }
+
+                                return (
+                                    <tr key={player.playerId} className={rowClass}>
+                                        <td className={`p-4 ${nameClass}`}>
+                                            {player.name}
+                                            {badge}
+                                        </td>
+                                        <td className="p-4 text-center text-gray-400 text-sm">
+                                            {player.role === "PLAYER" ? "—" : player.role}
+                                        </td>
+                                        <td className="p-4 text-right text-gray-300">
+                                            {player.totalPoints}
+                                        </td>
+                                        <td className="p-4 text-right text-gray-400 text-sm">
+                                            {player.isCaptain ? "2x" : player.isViceCaptain ? "1.5x" : "1x"}
+                                        </td>
+                                        <td className={`p-4 text-right font-bold ${player.isCaptain ? 'text-blue-400' : player.isViceCaptain ? 'text-green-400' : 'text-primary'}`}>
+                                            {player.contributedPoints}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
