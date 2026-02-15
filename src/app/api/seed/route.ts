@@ -303,7 +303,7 @@ async function runSeed(req: Request) {
 
         const playerRows = Array.from(allPlayerNames).map((name) => ({
             api_player_id: name.toLowerCase().replace(/\s+/g, "-"),
-            name,
+            display_name: name,
         }));
 
         const { error: playersErr } = await supabase
@@ -333,7 +333,7 @@ async function runSeed(req: Request) {
                 const { data: playerRow } = await supabase
                     .from("players")
                     .select("api_player_id")
-                    .eq("name", p.name)
+                    .eq("display_name", p.name)
                     .maybeSingle();
 
                 if (playerRow) {
