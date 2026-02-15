@@ -141,21 +141,22 @@ async function runSync() {
     if (playerIds.length > 0) {
       const playersUpsert = playerIds.map((pid) => ({
         api_player_id: pid,
-        display_name: pid,
+        name: pid,
+        country: "",
       }));
 
-      const { error: pErr } = await supabase.from("players").upsert(playersUpsert);
+      const { error: pErr } = await supabase.from("players").upsert(playersUpsert, { onConflict: "api_player_id" });
       if (pErr) throw new Error(pErr.message);
     }
 
     const playerMatchRows = playerIds.map((pid) => {
       const stats = playerStatsMap[pid];
-      const pts = computePlayerPointsFromScorecard(stats);
+      const breakdown = computePlayerPointsFromScorecard(stats);
       return {
-        api_match_id: matchId,
+        api_match_id: "",  // will be set after match upsert
         api_player_id: pid,
-        points: pts,
-        breakdown: stats,
+        points: breakdown.total,
+        breakdown,
       };
     });
 
@@ -179,9 +180,12 @@ async function runSync() {
 
     if (matchErr) throw new Error(matchErr.message);
 
-    // Upsert player_match_points
+    // Upsert player_match_points (set match_id from upserted match)
+    for (const row of playerMatchRows) {
+      row.api_match_id = matchId;
+    }
     if (playerMatchRows.length > 0) {
-      const { error: pmpErr } = await supabase.from("player_match_points").upsert(playerMatchRows);
+      const { error: pmpErr } = await supabase.from("player_match_points").upsert(playerMatchRows, { onConflict: "api_match_id,api_player_id" });
       if (pmpErr) throw new Error(pmpErr.message);
     }
 
@@ -195,31 +199,16 @@ async function runSync() {
 
       const { data: roster, error: rosterErr } = await supabase
         .from("fantasy_team_players")
-        .select("api_player_id,is_captain,is_vicecaptain,effective_from_time,effective_to_time")
+        .select("player_id")
         .eq("fantasy_team_id", teamId);
 
       if (rosterErr) throw new Error(rosterErr.message);
 
-      const activeRoster = (roster || []).filter((r: any) => {
-        const fromOk =
-          !r.effective_from_time || new Date(r.effective_from_time).getTime() <= new Date(startTimeISO).getTime();
-        const toOk =
-          !r.effective_to_time || new Date(startTimeISO).getTime() < new Date(r.effective_to_time).getTime();
-        return fromOk && toOk;
-      });
-
-      let base = 0;
-      let captainPts = 0;
-      let vicePts = 0;
-
-      for (const r of activeRoster) {
-        const p = pointsByPlayer.get(String(r.api_player_id)) || 0;
-        base += p;
-        if (r.is_captain) captainPts = p;
-        if (r.is_vicecaptain) vicePts = p;
+      let total = 0;
+      for (const r of roster || []) {
+        const p = pointsByPlayer.get(String(r.player_id)) || 0;
+        total += p;
       }
-
-      const total = base + captainPts + vicePts * 0.5;
 
       const { error: tmpErr } = await supabase.from("team_match_points").upsert({
         api_match_id: matchId,
