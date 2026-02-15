@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { getSupabase } from "@/lib/supabaseClient";
 
 interface Team {
     id: number;
@@ -18,7 +18,9 @@ export default function TeamsPage() {
 
     async function fetchTeams() {
         setLoading(true);
-        const { data, error } = await supabase
+        const sb = getSupabase();
+        if (!sb) { setLoading(false); return; }
+        const { data, error } = await sb
             .from("fantasy_teams")
             .select("id, team_name, owner")
             .order("id");
@@ -39,7 +41,9 @@ export default function TeamsPage() {
         if (!teamName.trim()) return;
         setMessage(null);
 
-        const { error } = await supabase.from("fantasy_teams").insert({
+        const sb = getSupabase();
+        if (!sb) { setMessage({ type: "error", text: "Supabase not configured" }); return; }
+        const { error } = await sb.from("fantasy_teams").insert({
             team_name: teamName.trim(),
             owner: owner.trim() || "—",
         });
@@ -58,7 +62,9 @@ export default function TeamsPage() {
         if (!confirm(`Remove team "${name}"? This deletes their roster and scores.`)) return;
         setMessage(null);
 
-        const { error } = await supabase.from("fantasy_teams").delete().eq("id", id);
+        const sb = getSupabase();
+        if (!sb) return;
+        const { error } = await sb.from("fantasy_teams").delete().eq("id", id);
 
         if (error) {
             setMessage({ type: "error", text: error.message });
