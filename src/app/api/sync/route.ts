@@ -83,21 +83,28 @@ function assertAdminKey(key: string | null) {
 }
 
 // ---- Sync core ----
-async function runSync() {
+async function runSync(overrideLastSyncTime?: number) {
   const supabase = supabaseServer();
 
   // 1) last sync time
-  const { data: stateRow, error: stateErr } = await supabase
-    .from("sync_state")
-    .select("last_completed_match_time")
-    .eq("id", 1)
-    .maybeSingle();
+  let last = 0;
+  let stateRow: { last_completed_match_time: string } | null = null;
 
-  if (stateErr) throw new Error(stateErr.message);
+  if (overrideLastSyncTime !== undefined) {
+    last = overrideLastSyncTime;
+  } else {
+    const { data, error: stateErr } = await supabase
+      .from("sync_state")
+      .select("last_completed_match_time")
+      .eq("id", 1)
+      .maybeSingle();
 
-  const last = stateRow?.last_completed_match_time
-    ? new Date(stateRow.last_completed_match_time).getTime()
-    : 0;
+    if (stateErr) throw new Error(stateErr.message);
+    stateRow = data;
+    if (stateRow?.last_completed_match_time) {
+      last = new Date(stateRow.last_completed_match_time).getTime();
+    }
+  }
 
   // 2) fetch matches and filter to series
   const all = await fetchMatches();
@@ -266,11 +273,19 @@ async function runSync() {
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const key = searchParams.get("key");
+  const fromParam = searchParams.get("from");
+
   const auth = assertAdminKey(key);
   if (auth) return auth;
 
   try {
-    const out = await runSync();
+    let overrideTime: number | undefined;
+    if (fromParam) {
+      overrideTime = new Date(fromParam).getTime();
+      if (isNaN(overrideTime)) throw new Error("Invalid 'from' date format (use YYYY-MM-DD)");
+    }
+
+    const out = await runSync(overrideTime);
     return NextResponse.json({ ok: true, ...out });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? String(e) }, { status: 500 });
