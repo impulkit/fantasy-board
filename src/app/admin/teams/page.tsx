@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getSupabase } from "@/lib/supabaseClient";
 
@@ -136,13 +137,21 @@ export default function TeamsPage() {
                                     <td style={{ fontWeight: 600 }}>{team.team_name}</td>
                                     <td style={{ color: "var(--text-secondary)" }}>{team.owner}</td>
                                     <td style={{ textAlign: "right" }}>
-                                        <button
-                                            className="btn btn-danger"
-                                            style={{ padding: "6px 14px", fontSize: "0.8rem" }}
-                                            onClick={() => handleDelete(team.id, team.team_name)}
-                                        >
-                                            Remove
-                                        </button>
+                                        <div className="flex gap-2 justify-end">
+                                            <Link
+                                                href={`/admin/teams/${team.id}`}
+                                                className="btn-secondary text-xs py-1 px-3"
+                                            >
+                                                Manage Roster
+                                            </Link>
+                                            <button
+                                                onClick={() => handleDelete(team.id, team.team_name)}
+                                                className="btn btn-danger"
+                                                style={{ padding: "6px 14px", fontSize: "0.8rem" }}
+                                            >
+                                                Remove
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
