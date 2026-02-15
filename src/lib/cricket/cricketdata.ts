@@ -21,7 +21,7 @@ const fetchMatches = async () => {
     }
 };
 
-const fetchScorecard = async (matchId) => {
+const fetchScorecard = async (matchId: string) => {
     let attempts = 0;
     while (attempts < 3) {
         try {
@@ -42,12 +42,12 @@ const fetchScorecard = async (matchId) => {
     }
 };
 
-const isMatchCompleted = (match) => {
+const isMatchCompleted = (match: any) => {
     return match.status === 'completed';
 };
 
-const filterSeries = (matches) => {
-    return matches.filter(match => match.seriesId === CRICKETDATA_SERIES_ID);
+const filterSeries = (matches: any[]) => {
+    return matches.filter((match: any) => match.seriesId === CRICKETDATA_SERIES_ID);
 };
 
 export { fetchMatches, fetchScorecard, filterSeries, isMatchCompleted };

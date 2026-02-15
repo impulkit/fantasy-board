@@ -2,8 +2,19 @@
 -- Fantasy Board – Supabase Schema
 -- =================================================================
 -- Run this in your Supabase SQL Editor to create all tables.
--- Drop existing tables first if re-creating (CASCADE removes deps).
+-- WARNING: This drops and recreates all tables!
 -- =================================================================
+
+-- Drop old tables (order matters due to foreign keys)
+DROP TABLE IF EXISTS sync_state CASCADE;
+DROP TABLE IF EXISTS leaderboard_cache CASCADE;
+DROP TABLE IF EXISTS team_match_points CASCADE;
+DROP TABLE IF EXISTS player_match_points CASCADE;
+DROP TABLE IF EXISTS fantasy_team_players CASCADE;
+DROP TABLE IF EXISTS matches CASCADE;
+DROP TABLE IF EXISTS fantasy_teams CASCADE;
+DROP TABLE IF EXISTS players CASCADE;
+DROP TABLE IF EXISTS points_tracking CASCADE;  -- old schema table
 
 -- Players (keyed by normalized name from CricketData API)
 CREATE TABLE IF NOT EXISTS players (
