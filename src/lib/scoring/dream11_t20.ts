@@ -147,8 +147,8 @@ export function computePlayerPointsFromScorecard(stats: PlayerStats): PointsBrea
 export function normalizePlayerKey(name: string): string {
   return String(name || "unknown")
     .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    .replace(/\s+/g, "-");
 }
 
 /**
