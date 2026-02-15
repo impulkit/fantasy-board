@@ -277,7 +277,7 @@ const TEAMS: TeamData[] = [
     },
 ];
 
-export async function POST(req: Request) {
+async function runSeed(req: Request) {
     try {
         // Simple auth check
         const url = new URL(req.url);
@@ -362,9 +362,8 @@ export async function POST(req: Request) {
                 .upsert(
                     {
                         api_match_id: matchApiId,
-                        // name: matchLabels[mi], // Schema doesn't have name col, use team_a/team_b or status
                         status: "completed",
-                        result: matchLabels[mi], // store label in result or just use dates
+                        result: matchLabels[mi],
                         start_time: startTime,
                         completed_at: startTime,
                         match_date: startTime.split("T")[0],
@@ -396,9 +395,7 @@ export async function POST(req: Request) {
         log.push("Seeded player_match_points for 3 matches");
 
         // 5) Rebuild leaderboard_cache
-        // Sum points for each team's players across all matches
         for (const team of TEAMS) {
-            // Get team id
             const { data: tRow } = await supabase
                 .from("fantasy_teams")
                 .select("id")
@@ -435,4 +432,12 @@ export async function POST(req: Request) {
     } catch (e: any) {
         return NextResponse.json({ error: e.message }, { status: 500 });
     }
+}
+
+export async function GET(req: Request) {
+    return runSeed(req);
+}
+
+export async function POST(req: Request) {
+    return runSeed(req);
 }
