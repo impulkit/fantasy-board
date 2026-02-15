@@ -97,10 +97,10 @@ const PLAYER_POINTS: Record<string, number[]> = {
     "Kagiso Rabada": [65, 46, 16],
     "Abrar Ahmed": [84, 51, 0],
     "Daryl Mitchell": [49, 12, 72],
-    "Rashid Khan": [35, 7, 0],
+    "Rashid Khan": [35, 7, 128],
     "Kusal Perera": [0, 0, 0],
-    "Jacob Bethell": [79, 93, 0],
-    "Marcus Stoinis": [0, 0, 23],
+    "Jacob Bethell": [79, 93, 66],
+    "Marcus Stoinis": [0, 0, 0],
     "Finn Allen": [87, 63, 0],
     "Ben Duckett": [115, 9, 60],
     "Tim David": [6, 19, 6],
@@ -128,7 +128,7 @@ const PLAYER_POINTS: Record<string, number[]> = {
     "Sahibzada Farhan": [0, 0, 0],
     "Glenn Maxwell": [58, 107, 0],
     "Harshit Rana": [0, 0, 0],
-    "Matthew Humphreys": [0, 0, 0],
+    "Matthew Humphreys": [57, 57, 57],
 };
 
 const TEAMS: TeamData[] = [
@@ -216,7 +216,7 @@ const TEAMS: TeamData[] = [
             { name: "Naveen-ul-Haq", role: "BOWL", bid: 1 },
             { name: "Axar Patel", role: "AR", bid: 12 },
             { name: "Shadab Khan", role: "AR", bid: 1 },
-            { name: "Will Jacks", role: "AR", bid: 2 },
+            { name: "Siraj", role: "BOWL", bid: 1 },
             { name: "Shai Hope", role: "BAT", bid: 5.5 },
             { name: "Matthew Humphreys", role: "BOWL", bid: 0 },
         ],
@@ -446,6 +446,20 @@ async function runSeed(req: Request) {
                     fantasy_team_id: tRow.id,
                     points: matchTotal
                 }, { onConflict: "api_match_id,fantasy_team_id" });
+            }
+
+            // 5c) Apply Manual Adjustments (Trades)
+            const MANUAL_ADJUSTMENTS: Record<string, number> = {
+                "Akash": -161,
+                "Hem": -89,
+                "Abhay": -68,
+                "Harsh": 99
+            };
+            const adj = MANUAL_ADJUSTMENTS[team.owner] || 0;
+            if (adj !== 0) {
+                await supabase.from("fantasy_teams").update({ manual_adjustment_points: adj }).eq("id", tRow.id);
+                totalPoints += adj;
+                log.push(`  Applied adjustment of ${adj} pts`);
             }
 
             await supabase.from("leaderboard_cache").upsert(

@@ -128,7 +128,7 @@ async function runSync(overrideLastSyncTime?: number) {
   let maxTime = last;
 
   // Fetch all fantasy teams once
-  const { data: teams, error: teamsErr } = await supabase.from("fantasy_teams").select("id");
+  const { data: teams, error: teamsErr } = await supabase.from("fantasy_teams").select("id, manual_adjustment_points");
   if (teamsErr) throw new Error(teamsErr.message);
 
   for (const m of toProcess) {
@@ -243,6 +243,11 @@ async function runSync(overrideLastSyncTime?: number) {
   if (atpErr) throw new Error(atpErr.message);
 
   const totals = new Map<number, number>();
+
+  // Initialize with manual adjustments
+  for (const t of teams || []) {
+    totals.set(t.id, Number(t.manual_adjustment_points || 0));
+  }
   for (const row of allTeamPoints || []) {
     const id = Number(row.fantasy_team_id);
     const pts = Number(row.points || 0);

@@ -22,6 +22,7 @@ interface TeamDetails {
     totalPoints: number;
     players: PlayerContribution[];
     lastUpdated: string | null;
+    manualAdjustment: number;
 }
 
 // Fetch Data
@@ -35,7 +36,7 @@ async function getTeamDetails(teamId: number): Promise<TeamDetails | null> {
     // 1. Get Team Info
     const { data: team, error: teamErr } = await supabase
         .from("fantasy_teams")
-        .select("id, team_name, owner")
+        .select("id, team_name, owner, manual_adjustment_points")
         .eq("id", teamId)
         .single();
 
@@ -89,16 +90,18 @@ async function getTeamDetails(teamId: number): Promise<TeamDetails | null> {
     // Sort by contributed points desc
     players.sort((a, b) => b.contributedPoints - a.contributedPoints);
 
-    // Calculate team total from players (sanity check vs cache)
-    const teamTotal = players.reduce((sum, p) => sum + p.contributedPoints, 0);
+    // Calculate team total from players + adjustment
+    const manualAdjustment = Number(team.manual_adjustment_points || 0);
+    const teamTotal = players.reduce((sum, p) => sum + p.contributedPoints, 0) + manualAdjustment;
 
     return {
         id: team.id,
         teamName: team.team_name,
         owner: team.owner,
         totalPoints: teamTotal,
+        manualAdjustment,
         players,
-        lastUpdated: new Date().toISOString(), // In real app, get from sync_state or cache
+        lastUpdated: new Date().toISOString(),
     };
 }
 
@@ -187,6 +190,15 @@ export default async function TeamPage({ params }: { params: { id: string } }) {
                         </tbody>
                     </table>
                 </div>
+
+                {team.manualAdjustment !== 0 && (
+                    <div className="p-4 border-t border-white/10 bg-white/5 flex justify-between items-center text-sm">
+                        <span className="text-gray-400">Manual Adjustments (Trades/Substitutions)</span>
+                        <span className={`font-bold ${team.manualAdjustment < 0 ? 'text-red-400' : 'text-green-400'}`}>
+                            {team.manualAdjustment > 0 ? '+' : ''}{team.manualAdjustment} pts
+                        </span>
+                    </div>
+                )}
             </section>
         </main>
     );

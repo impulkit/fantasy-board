@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS players (
 CREATE TABLE IF NOT EXISTS fantasy_teams (
     id         SERIAL PRIMARY KEY,
     team_name  TEXT NOT NULL,
-    owner      TEXT NOT NULL DEFAULT ''
+    owner      TEXT NOT NULL DEFAULT '',
+    manual_adjustment_points NUMERIC DEFAULT 0
 );
 
 -- Roster: which players belong to which fantasy team
@@ -38,6 +39,7 @@ CREATE TABLE IF NOT EXISTS fantasy_team_players (
     is_vicecaptain       BOOLEAN NOT NULL DEFAULT FALSE,
     effective_from_time  TIMESTAMPTZ,
     effective_to_time    TIMESTAMPTZ,
+    auction_price        NUMERIC,
     UNIQUE (fantasy_team_id, api_player_id)
 );
 
