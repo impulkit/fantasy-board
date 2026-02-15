@@ -1,6 +1,9 @@
+import Link from "next/link";
+import "./globals.css";
+
 export const metadata = {
   title: "Fantasy Board",
-  description: "Private fantasy league board",
+  description: "Private fantasy cricket league board",
 };
 
 export default function RootLayout({
@@ -10,8 +13,20 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body style={{ fontFamily: "system-ui, sans-serif", margin: 0, padding: 0 }}>
-        <div style={{ padding: 16 }}>{children}</div>
+      <body>
+        <nav className="navbar">
+          <Link href="/" className="navbar-brand">
+            <span className="logo-icon">🏏</span>
+            Fantasy Board
+          </Link>
+          <div className="navbar-links">
+            <Link href="/">Leaderboard</Link>
+            <Link href="/admin">Admin</Link>
+            <Link href="/admin/teams">Teams</Link>
+            <Link href="/admin/sync">Sync</Link>
+          </div>
+        </nav>
+        {children}
       </body>
     </html>
   );

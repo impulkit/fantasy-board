@@ -1,0 +1,18 @@
+# dependencies
+node_modules/
+.next/
+next-env.d.ts
+
+# env
+.env
+.env.local
+.env*.local
+
+# misc
+*.log
+npm-debug.log*
+
+# temp
+auction_data.txt
+auction_computed.txt
+read_auction.py

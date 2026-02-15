@@ -1,14 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { createRequire } from "node:module";
-
-const require = createRequire(import.meta.url);
-
-// Import CommonJS scoring module from TS route
-const {
+import {
   computePlayerPointsFromScorecard,
   normalizeMatchScorecardToPlayerStats,
-} = require("../../../lib/scoring/dream11_t20");
+} from "@/lib/scoring/dream11_t20";
 
 // ---- Supabase server client (service role) ----
 function supabaseServer() {
@@ -60,7 +55,6 @@ function isCompletedMatch(m: any) {
 }
 
 function getStartTimeISO(m: any): string | null {
-  // CricketData frequently uses dateTimeGMT for match time
   const t =
     m?.dateTimeGMT ||
     m?.dateTime ||
@@ -105,7 +99,7 @@ async function runSync() {
     ? new Date(stateRow.last_completed_match_time).getTime()
     : 0;
 
-  // 2) fetch matches and filter to WC series
+  // 2) fetch matches and filter to series
   const all = await fetchMatches();
   const wc = seriesFilter(all);
 
@@ -132,19 +126,18 @@ async function runSync() {
 
   for (const m of toProcess) {
     const matchId = m.id;
-    const startTimeISO: string = m.startTimeISO;
+    const startTimeISO: string = m.startTimeISO!;
 
     // Fetch scorecard
     const scorecard = await fetchScorecard(matchId);
 
     // Build per-player aggregated stats, then compute points per player
-    const playerStatsMap: Record<string, any> =
-      normalizeMatchScorecardToPlayerStats(scorecard) || {};
+    const playerStatsMap = normalizeMatchScorecardToPlayerStats(scorecard) || {};
 
     // Build rows for players + player_match_points
     const playerIds = Object.keys(playerStatsMap);
 
-    // Upsert players table (display_name = key for now)
+    // Upsert players table
     if (playerIds.length > 0) {
       const playersUpsert = playerIds.map((pid) => ({
         api_player_id: pid,
@@ -166,7 +159,7 @@ async function runSync() {
       };
     });
 
-    // Upsert match metadata first
+    // Upsert match metadata
     const teamA = Array.isArray(m.raw?.teams) ? String(m.raw.teams[0] ?? "") : "";
     const teamB = Array.isArray(m.raw?.teams) ? String(m.raw.teams[1] ?? "") : "";
     const status = String(m.raw?.status ?? "");
@@ -176,7 +169,7 @@ async function runSync() {
       api_match_id: matchId,
       match_date: startTimeISO.slice(0, 10),
       start_time: startTimeISO,
-      completed_at: startTimeISO, // We don’t have reliable completion time; start time is OK for ordering boundary
+      completed_at: startTimeISO,
       team_a: teamA,
       team_b: teamB,
       status,
@@ -200,7 +193,6 @@ async function runSync() {
     for (const t of teams || []) {
       const teamId = Number(t.id);
 
-      // Fetch roster rows (we filter active in code)
       const { data: roster, error: rosterErr } = await supabase
         .from("fantasy_team_players")
         .select("api_player_id,is_captain,is_vicecaptain,effective_from_time,effective_to_time")
@@ -227,7 +219,6 @@ async function runSync() {
         if (r.is_vicecaptain) vicePts = p;
       }
 
-      // Apply multipliers as bonus (2x captain => +1x extra, 1.5x vice => +0.5x extra)
       const total = base + captainPts + vicePts * 0.5;
 
       const { error: tmpErr } = await supabase.from("team_match_points").upsert({
@@ -239,13 +230,12 @@ async function runSync() {
       if (tmpErr) throw new Error(tmpErr.message);
     }
 
-    // advance boundary
     processed += 1;
     const tms = new Date(startTimeISO).getTime();
     if (tms > maxTime) maxTime = tms;
   }
 
-  // Recompute leaderboard_cache (simple and safe)
+  // Recompute leaderboard_cache
   const { data: allTeamPoints, error: atpErr } = await supabase
     .from("team_match_points")
     .select("fantasy_team_id, points");
@@ -277,7 +267,10 @@ async function runSync() {
     if (ssErr) throw new Error(ssErr.message);
   }
 
-  return { processed, boundaryISO: processed > 0 ? new Date(maxTime).toISOString() : stateRow?.last_completed_match_time ?? null };
+  return {
+    processed,
+    boundaryISO: processed > 0 ? new Date(maxTime).toISOString() : stateRow?.last_completed_match_time ?? null,
+  };
 }
 
 // ---- Route handlers ----
@@ -296,8 +289,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const form = await req.formData();
-  const key = String(form.get("key") ?? "");
+  const body = await req.json().catch(() => ({}));
+  const key = String(body?.key ?? "");
   const auth = assertAdminKey(key);
   if (auth) return auth;
 
