@@ -17,12 +17,19 @@ async function getLeaderboard() {
 
         const { data, error } = await supabase
             .from("leaderboard_cache")
-            .select("total_points, fantasy_team_id, last_updated, fantasy_teams(team_name, owner)")
+            .select("*, fantasy_teams(*)")
             .order("total_points", { ascending: false });
 
         if (error) {
             console.error("Leaderboard fetch error:", error.message);
-            return [];
+            // Return a dummy error row to visualize it on frontend
+            return [{
+                rank: 0,
+                teamName: "Error",
+                owner: error.message,
+                points: 0,
+                lastUpdated: new Date().toISOString()
+            }];
         }
 
         return (data || []).map((row: any, i: number) => ({
@@ -32,9 +39,15 @@ async function getLeaderboard() {
             points: Number(row.total_points || 0),
             lastUpdated: row.last_updated,
         }));
-    } catch (e) {
+    } catch (e: any) {
         console.error("Leaderboard error:", e);
-        return [];
+        return [{
+            rank: 0,
+            teamName: "Exception",
+            owner: e.message,
+            points: 0,
+            lastUpdated: new Date().toISOString()
+        }];
     }
 }
 
