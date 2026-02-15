@@ -315,17 +315,26 @@ async function runSeed(req: Request) {
 
         // 2) Create fantasy teams
         for (const team of TEAMS) {
-            const { data: teamRow, error: teamErr } = await supabase
+            // Check if team exists
+            let teamId: number;
+            const { data: existingTeam } = await supabase
                 .from("fantasy_teams")
-                .upsert(
-                    { team_name: `Team ${team.owner}`, owner: team.owner },
-                    { onConflict: "team_name" }
-                )
                 .select("id")
-                .single();
+                .eq("owner", team.owner)
+                .maybeSingle();
 
-            if (teamErr) throw new Error(`Team ${team.owner}: ${teamErr.message}`);
-            const teamId = teamRow.id;
+            if (existingTeam) {
+                teamId = existingTeam.id;
+            } else {
+                const { data: newTeam, error: teamErr } = await supabase
+                    .from("fantasy_teams")
+                    .insert({ team_name: `Team ${team.owner}`, owner: team.owner })
+                    .select("id")
+                    .single();
+
+                if (teamErr) throw new Error(`Team ${team.owner}: ${teamErr.message}`);
+                teamId = newTeam.id;
+            }
             log.push(`Team "${team.owner}" → id=${teamId}`);
 
             // 3) Link players to team
