@@ -340,10 +340,10 @@ async function runSeed(req: Request) {
                     await supabase.from("fantasy_team_players").upsert(
                         {
                             fantasy_team_id: teamId,
-                            player_id: playerRow.api_player_id,
-                            auction_price: p.bid,
+                            api_player_id: playerRow.api_player_id,
+                            // auction_price: p.bid, // Commented out until schema migration applied
                         },
-                        { onConflict: "fantasy_team_id,player_id" }
+                        { onConflict: "fantasy_team_id,api_player_id" }
                     );
                 }
             }
