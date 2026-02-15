@@ -420,7 +420,13 @@ async function runSeed(req: Request) {
             let totalPoints = 0;
             for (const p of team.players) {
                 const pts = PLAYER_POINTS[p.name];
-                if (pts) totalPoints += pts.reduce((s, v) => s + (v || 0), 0);
+                if (pts) {
+                    let multiplier = 1;
+                    if (CAPTAINS.has(p.name)) multiplier = 2;
+                    else if (VICE_CAPTAINS.has(p.name)) multiplier = 1.5;
+
+                    totalPoints += pts.reduce((s, v) => s + ((v || 0) * multiplier), 0);
+                }
             }
 
             await supabase.from("leaderboard_cache").upsert(
