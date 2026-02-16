@@ -40,7 +40,14 @@ async function fetchMatches() {
   // Use series_info endpoint to get ALL matches for this specific series
   const url = `${CRIC_BASE}/series_info?apikey=${apikey}&offset=0&id=${encodeURIComponent(seriesId)}`;
   const json = await fetchJsonWithRetry(url);
-  return json?.data?.matchList ?? json?.data?.matches ?? json?.data ?? [];
+
+  // Check for API rate limit
+  if (json?.status === "failure" || json?.reason) {
+    throw new Error(`CricketData API error: ${json?.reason || json?.status || "unknown"} (credits: ${json?.info?.credits ?? "?"}, hitsToday: ${json?.info?.hitsToday ?? "?"})`);
+  }
+
+  const matches = json?.data?.matchList ?? json?.data?.matches ?? json?.data ?? [];
+  return matches;
 }
 
 async function fetchScorecard(matchId: string) {
