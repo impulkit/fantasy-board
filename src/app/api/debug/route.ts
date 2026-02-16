@@ -42,6 +42,21 @@ export async function GET() {
             .order("fantasy_team_id")
             .limit(200);
 
+        // 6. Sample player_match_points (actual per-player scores)
+        const { data: pmpSample } = await supabase
+            .from("player_match_points")
+            .select("api_match_id, api_player_id, points")
+            .neq("api_match_id", "seed-match-1")
+            .neq("api_match_id", "seed-match-2")
+            .neq("api_match_id", "seed-match-3")
+            .gt("points", 0)
+            .limit(20);
+
+        // 7. Get a sample match ID to fetch raw scorecard
+        const sampleApiMatchId = tmpData && tmpData.length > 0
+            ? tmpData.find((t: any) => !t.api_match_id.startsWith("seed-"))?.api_match_id
+            : null;
+
         return NextResponse.json({
             env: {
                 url: !!process.env.SUPABASE_URL,
@@ -60,8 +75,10 @@ export async function GET() {
                 syncedCount: syncedPlayerIds.length,
                 mismatchCount: inRosterNotSynced.length,
             },
-            teamMatchPoints: tmpData,
+            teamMatchPoints: tmpData?.slice(0, 10),
             teamMatchPointsError: tmpErr,
+            playerMatchPointsSample: pmpSample,
+            sampleApiMatchId,
         });
     } catch (e: any) {
         return NextResponse.json({ error: e.message });
