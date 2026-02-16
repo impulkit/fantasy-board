@@ -117,7 +117,9 @@ export default function SyncPage() {
                                 {Object.entries(debugInfo).map(([key, val]) => (
                                     <tr key={key} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                                         <td style={{ padding: "4px 8px", color: "var(--text-muted)" }}>{key}</td>
-                                        <td style={{ padding: "4px 8px", fontFamily: "monospace" }}>{String(val)}</td>
+                                        <td style={{ padding: "4px 8px", fontFamily: "monospace", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                                            {typeof val === "object" ? JSON.stringify(val, null, 2) : String(val)}
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
