@@ -14,7 +14,7 @@ interface RosterItem {
     api_player_id: string;
     is_captain: boolean;
     is_vicecaptain: boolean;
-    players?: { display_name: string };
+    players?: { display_name: string } | null;
 }
 
 export default function EditTeamPage({ params }: { params: { id: string } }) {
@@ -54,7 +54,7 @@ export default function EditTeamPage({ params }: { params: { id: string } }) {
             .from("fantasy_team_players")
             .select("api_player_id, is_captain, is_vicecaptain, players(display_name)")
             .eq("fantasy_team_id", teamId);
-        setRoster(rosterData || []);
+        setRoster((rosterData as any[]) || []);
 
         // 3. All Players (for dropdown)
         const { data: allP } = await sb

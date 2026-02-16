@@ -206,14 +206,14 @@ async function runSync(overrideLastSyncTime?: number) {
 
       const { data: roster, error: rosterErr } = await supabase
         .from("fantasy_team_players")
-        .select("player_id, is_captain, is_vicecaptain")
+        .select("api_player_id, is_captain, is_vicecaptain")
         .eq("fantasy_team_id", teamId);
 
       if (rosterErr) throw new Error(rosterErr.message);
 
       let total = 0;
       for (const r of roster || []) {
-        const raw = pointsByPlayer.get(String(r.player_id)) || 0;
+        const raw = pointsByPlayer.get(String(r.api_player_id)) || 0;
         let mult = 1;
         if (r.is_captain) mult = 2;
         else if (r.is_vicecaptain) mult = 1.5;
@@ -281,11 +281,17 @@ async function runSync(overrideLastSyncTime?: number) {
 // ---- Route handlers ----
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const key = searchParams.get("key");
   const fromParam = searchParams.get("from");
 
-  const auth = assertAdminKey(key);
-  if (auth) return auth;
+  // Auth: accept Vercel cron secret header OR admin key query param
+  const authHeader = req.headers.get("authorization");
+  const cronSecret = process.env.CRON_SECRET;
+  const key = searchParams.get("key");
+  const isVercelCron = cronSecret && authHeader === `Bearer ${cronSecret}`;
+  const isAdminKey = key && key === process.env.ADMIN_KEY;
+  if (!isVercelCron && !isAdminKey) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   try {
     let overrideTime: number | undefined;

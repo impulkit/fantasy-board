@@ -1,8 +1,8 @@
 {
     "crons": [
         {
-            "path": "/api/sync?key=your-admin-key",
-            "schedule": "0 2 * * *"
+            "path": "/api/sync",
+            "schedule": "29 18 * * *"
         }
     ]
 }
