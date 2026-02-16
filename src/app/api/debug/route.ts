@@ -36,9 +36,9 @@ export async function GET() {
         const inSyncedNotRoster = syncedPlayerIds.filter((id: string) => !rosterPlayerIds.includes(id));
 
         // 5. Team match points
-        const { data: tmpData } = await supabase
+        const { data: tmpData, error: tmpErr } = await supabase
             .from("team_match_points")
-            .select("fantasy_team_id, match_id, points_total")
+            .select("fantasy_team_id, api_match_id, points")
             .order("fantasy_team_id")
             .limit(200);
 
@@ -61,6 +61,7 @@ export async function GET() {
                 mismatchCount: inRosterNotSynced.length,
             },
             teamMatchPoints: tmpData,
+            teamMatchPointsError: tmpErr,
         });
     } catch (e: any) {
         return NextResponse.json({ error: e.message });
