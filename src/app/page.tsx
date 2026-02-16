@@ -88,7 +88,10 @@ export default async function LeaderboardPage() {
                         <p className="text-sm text-slate-400 font-medium">T20 World Cup 2026</p>
                     </div>
                 </div>
-                <div className="flex gap-4">
+                <div className="flex gap-3">
+                    <Link href="/stats/ranks" className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-400 hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-lg flex items-center gap-2">
+                        <span>📊</span> Stats
+                    </Link>
                     <Link href="/admin" className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-400 hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-lg">
                         Admin
                     </Link>
