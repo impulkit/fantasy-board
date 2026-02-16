@@ -36,9 +36,11 @@ async function fetchJsonWithRetry(url: string, tries = 3) {
 
 async function fetchMatches() {
   const apikey = process.env.CRICKETDATA_API_KEY!;
-  const url = `${CRIC_BASE}/matches?apikey=${apikey}&offset=0`;
+  const seriesId = process.env.CRICKETDATA_SERIES_ID!;
+  // Use series_info endpoint to get ALL matches for this specific series
+  const url = `${CRIC_BASE}/series_info?apikey=${apikey}&offset=0&id=${encodeURIComponent(seriesId)}`;
   const json = await fetchJsonWithRetry(url);
-  return json?.data ?? [];
+  return json?.data?.matchList ?? json?.data?.matches ?? json?.data ?? [];
 }
 
 async function fetchScorecard(matchId: string) {
@@ -110,12 +112,11 @@ async function runSync(overrideLastSyncTime?: number) {
     }
   }
 
-  // 2) fetch matches and filter to series
+  // 2) fetch matches from series_info (already filtered to our series)
   const all = await fetchMatches();
-  const wc = seriesFilter(all);
 
   // 3) filter completed and sort by start time
-  const completed = wc
+  const completed = (Array.isArray(all) ? all : [])
     .filter(isCompletedMatch)
     .map((m: any) => ({
       raw: m,
@@ -280,21 +281,18 @@ async function runSync(overrideLastSyncTime?: number) {
     processed,
     boundaryISO: processed > 0 ? new Date(maxTime).toISOString() : stateRow?.last_completed_match_time ?? null,
     debug: {
-      totalMatchesFromAPI: all.length,
-      matchesInSeries: wc.length,
+      matchesFromSeriesAPI: Array.isArray(all) ? all.length : `(not array: ${typeof all})`,
       completedInSeries: completed.length,
       afterBoundary: toProcess.length,
       syncBoundaryUsed: new Date(last).toISOString(),
       seriesId: process.env.CRICKETDATA_SERIES_ID ?? "(not set)",
-      sampleMatch: all.length > 0 ? {
+      sampleMatch: Array.isArray(all) && all.length > 0 ? {
         id: all[0].id,
-        series_id: all[0].series_id,
-        series: all[0].series,
-        seriesId: all[0].seriesId,
         name: all[0].name,
         status: all[0].status,
         matchEnded: all[0].matchEnded,
-      } : null,
+        dateTimeGMT: all[0].dateTimeGMT,
+      } : (typeof all === "object" ? all : null),
     },
   };
 }
