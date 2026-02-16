@@ -153,8 +153,7 @@ async function runSync(overrideLastSyncTime?: number) {
     if (playerIds.length > 0) {
       const playersUpsert = playerIds.map((pid) => ({
         api_player_id: pid,
-        name: pid,
-        country: "",
+        display_name: pid,
       }));
 
       const { error: pErr } = await supabase.from("players").upsert(playersUpsert, { onConflict: "api_player_id" });
