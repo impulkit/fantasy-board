@@ -11,8 +11,9 @@ interface PlayerContribution {
     role: "BAT" | "BOWL" | "AR" | "WK" | string;
     isCaptain: boolean;
     isViceCaptain: boolean;
+    isBench: boolean;
     totalPoints: number; // Raw points from matches
-    contributedPoints: number; // After multiplier
+    contributedPoints: number; // After multiplier (and 0 if bench)
 }
 
 interface MatchPoint {
@@ -21,6 +22,7 @@ interface MatchPoint {
     title: string;
     points: number;
     result: string;
+    timestamp: number;
 }
 
 interface TeamDetails {
@@ -28,7 +30,8 @@ interface TeamDetails {
     teamName: string;
     owner: string;
     totalPoints: number;
-    players: PlayerContribution[];
+    players: PlayerContribution[]; // Containing only Active
+    bench: PlayerContribution[];
     matchTrend: MatchPoint[];
     lastUpdated: string | null;
     manualAdjustment: number;
@@ -54,7 +57,7 @@ async function getTeamDetails(teamId: number): Promise<TeamDetails | null> {
     // 2. Get Roster
     const { data: roster, error: rosterErr } = await supabase
         .from("fantasy_team_players")
-        .select("api_player_id, is_captain, is_vicecaptain, players(display_name)")
+        .select("api_player_id, is_captain, is_vicecaptain, is_bench, players(display_name)")
         .eq("fantasy_team_id", teamId);
 
     if (rosterErr) {
@@ -63,12 +66,19 @@ async function getTeamDetails(teamId: number): Promise<TeamDetails | null> {
     }
 
     // 3. Get Points for these players
-    // This gives total points per player.
-    // For match-wise trend, we need `team_match_points` table which stores aggregate per team per match.
-    // However, `team_match_points` might not be fully populated if sync logic isn't perfect yet.
-    // Let's assume `team_match_points` works or fallback to parsing `player_match_points` joined with `matches`.
+    const playerIds = roster.map((r) => r.api_player_id);
+    const { data: points, error: pointsErr } = await supabase
+        .from("player_match_points")
+        .select("api_player_id, points")
+        .in("api_player_id", playerIds);
 
-    // Attempt to fetch dedicated trend data
+    const playerPointsMap = new Map<string, number>();
+    points?.forEach((p) => {
+        const current = playerPointsMap.get(p.api_player_id) || 0;
+        playerPointsMap.set(p.api_player_id, current + Number(p.points));
+    });
+
+    // 4. Get Match Trends
     const { data: trendData } = await supabase
         .from("team_match_points")
         .select(`
@@ -84,7 +94,7 @@ async function getTeamDetails(teamId: number): Promise<TeamDetails | null> {
         `)
         .eq("fantasy_team_id", teamId);
 
-    // Sort by date in JS
+    // Process Trends
     const trends: MatchPoint[] = (trendData || [])
         .map((t: any) => ({
             matchId: t.matches?.api_match_id,
@@ -97,38 +107,32 @@ async function getTeamDetails(teamId: number): Promise<TeamDetails | null> {
         .sort((a, b) => a.timestamp - b.timestamp);
 
 
-    // 4. Get Player Totals
-    const playerIds = roster.map((r) => r.api_player_id);
-    const { data: points, error: pointsErr } = await supabase
-        .from("player_match_points")
-        .select("api_player_id, points")
-        .in("api_player_id", playerIds);
-
-    const playerPointsMap = new Map<string, number>();
-    points?.forEach((p) => {
-        const current = playerPointsMap.get(p.api_player_id) || 0;
-        playerPointsMap.set(p.api_player_id, current + Number(p.points));
-    });
-
-    // Sort Players: 1. Captain, 2. Vice Captain, 3. Points DESC
-    const players: PlayerContribution[] = roster.map((r: any) => {
+    // 5. Process Players (Active vs Bench)
+    const allPlayers: PlayerContribution[] = roster.map((r: any) => {
         const rawPoints = playerPointsMap.get(r.api_player_id) || 0;
         let multiplier = 1;
         if (r.is_captain) multiplier = 2;
         if (r.is_vicecaptain) multiplier = 1.5;
 
+        const isBench = r.is_bench || false;
+
         return {
             playerId: r.api_player_id,
             name: r.players?.display_name || r.api_player_id,
-            role: "PLAYER", // Role data needs better source
+            role: "PLAYER",
             isCaptain: r.is_captain,
             isViceCaptain: r.is_vicecaptain,
+            isBench,
             totalPoints: rawPoints,
-            contributedPoints: rawPoints * multiplier,
+            contributedPoints: isBench ? 0 : rawPoints * multiplier,
         };
     });
 
-    players.sort((a, b) => {
+    const activePlayers = allPlayers.filter(p => !p.isBench);
+    const benchPlayers = allPlayers.filter(p => p.isBench);
+
+    // Sort Active: Captain > VC > Points
+    activePlayers.sort((a, b) => {
         if (a.isCaptain) return -1;
         if (b.isCaptain) return 1;
         if (a.isViceCaptain) return -1;
@@ -136,11 +140,11 @@ async function getTeamDetails(teamId: number): Promise<TeamDetails | null> {
         return b.contributedPoints - a.contributedPoints;
     });
 
+    // Sort Bench: Points DESC
+    benchPlayers.sort((a, b) => b.totalPoints - a.totalPoints);
+
     const manualAdjustment = Number(team.manual_adjustment_points || 0);
-    // If we have trends, the total should match sum of trends + manual? 
-    // Actually `leaderboard_cache` is usually source of truth for total.
-    // Here we calculate from player summaries to be safe, but `team_match_points` sum should be close.
-    const teamTotal = players.reduce((sum, p) => sum + p.contributedPoints, 0) + manualAdjustment;
+    const teamTotal = activePlayers.reduce((sum, p) => sum + p.contributedPoints, 0) + manualAdjustment;
 
     return {
         id: team.id,
@@ -148,9 +152,10 @@ async function getTeamDetails(teamId: number): Promise<TeamDetails | null> {
         owner: team.owner,
         totalPoints: teamTotal,
         manualAdjustment,
-        players,
-        matchTrend: trends,
+        players: activePlayers,
+        bench: benchPlayers,
         lastUpdated: new Date().toISOString(),
+        matchTrend: trends,
     };
 }
 
@@ -165,7 +170,6 @@ export default async function TeamPage({ params }: { params: { id: string } }) {
     const team = await getTeamDetails(teamId);
     if (!team) return notFound();
 
-    // Chart helpers
     const maxPoints = Math.max(...team.matchTrend.map(t => t.points), 100);
 
     return (
@@ -241,58 +245,88 @@ export default async function TeamPage({ params }: { params: { id: string } }) {
                 </div>
             )}
 
-            {/* Roster Grid */}
+            {/* Roster Grid (Starting XI) */}
             <section>
-                <h2 className="text-lg font-bold text-slate-400 uppercase tracking-widest mb-6 px-2">Starting XI</h2>
+                <div className="flex items-center justify-between mb-6 px-2">
+                    <h2 className="text-lg font-bold text-slate-400 uppercase tracking-widest">Starting XI</h2>
+                    <span className="text-xs font-mono text-slate-600 bg-slate-800/50 px-2 py-1 rounded">{team.players.length} Players</span>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {team.players.map((player) => {
-                        const isCaptain = player.isCaptain;
-                        const isVice = player.isViceCaptain;
-
-                        let cardClass = "glass-panel p-4 flex items-center gap-4 hover:bg-white/5 transition-colors group relative overflow-hidden";
-                        let ringClass = "";
-
-                        if (isCaptain) {
-                            ringClass = "ring-2 ring-yellow-500/50 shadow-yellow-500/10 shadow-lg";
-                            cardClass += " bg-gradient-to-br from-slate-800/80 to-yellow-900/10";
-                        } else if (isVice) {
-                            ringClass = "ring-1 ring-slate-400/50";
-                        }
-
-                        return (
-                            <div key={player.playerId} className={`${cardClass} ${ringClass}`}>
-                                {/* Role/Status Icon */}
-                                <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-sm shadow-inner shrink-0 ${isCaptain ? 'bg-yellow-500 text-slate-900' :
-                                        isVice ? 'bg-slate-300 text-slate-900' :
-                                            'bg-slate-700/50 text-slate-400'
-                                    }`}>
-                                    {isCaptain ? "C" : isVice ? "VC" : player.name.charAt(0)}
-                                </div>
-
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        <h3 className={`font-bold truncate ${isCaptain ? 'text-yellow-400' : 'text-white'}`}>
-                                            {player.name}
-                                        </h3>
-                                        {isCaptain && <span className="text-[10px] font-bold px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 rounded border border-yellow-500/30 uppercase">Capt</span>}
-                                        {isVice && <span className="text-[10px] font-bold px-1.5 py-0.5 bg-slate-500/20 text-slate-300 rounded border border-slate-500/30 uppercase">Vice</span>}
-                                    </div>
-                                    <div className="text-xs text-slate-500 font-medium mt-0.5">
-                                        {player.totalPoints} pts × {isCaptain ? '2' : isVice ? '1.5' : '1'}
-                                    </div>
-                                </div>
-
-                                <div className="text-right">
-                                    <div className={`text-xl font-bold tabular-nums ${isCaptain ? 'text-yellow-400' : 'text-white'}`}>
-                                        {player.contributedPoints}
-                                    </div>
-                                    <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Total</div>
-                                </div>
-                            </div>
-                        );
-                    })}
+                    {team.players.map((player) => (
+                        <PlayerCard key={player.playerId} player={player} />
+                    ))}
                 </div>
             </section>
+
+            {/* Bench Grid */}
+            {team.bench.length > 0 && (
+                <section className="opacity-75">
+                    <div className="flex items-center justify-between mb-6 px-2 border-t border-white/5 pt-8">
+                        <h2 className="text-lg font-bold text-slate-500 uppercase tracking-widest">Bench</h2>
+                        <span className="text-xs font-mono text-slate-600 bg-slate-800/50 px-2 py-1 rounded">{team.bench.length} Players</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {team.bench.map((player) => (
+                            <PlayerCard key={player.playerId} player={player} isBench={true} />
+                        ))}
+                    </div>
+                </section>
+            )}
         </main>
+    );
+}
+
+function PlayerCard({ player, isBench = false }: { player: PlayerContribution, isBench?: boolean }) {
+    const isCaptain = player.isCaptain;
+    const isVice = player.isViceCaptain;
+
+    let cardClass = "glass-panel p-4 flex items-center gap-4 transition-colors group relative overflow-hidden";
+    let ringClass = "";
+
+    if (isCaptain) {
+        ringClass = "ring-2 ring-yellow-500/50 shadow-yellow-500/10 shadow-lg";
+        cardClass += " bg-gradient-to-br from-slate-800/80 to-yellow-900/10";
+    } else if (isVice) {
+        ringClass = "ring-1 ring-slate-400/50";
+    } else if (isBench) {
+        cardClass += " bg-slate-900/40 border-slate-800 text-slate-500";
+    } else {
+        cardClass += " hover:bg-white/5";
+    }
+
+    return (
+        <div className={`${cardClass} ${ringClass}`}>
+            {/* Role/Status Icon */}
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-sm shadow-inner shrink-0 ${isCaptain ? 'bg-yellow-500 text-slate-900' :
+                    isVice ? 'bg-slate-300 text-slate-900' :
+                        isBench ? 'bg-slate-800 text-slate-600' :
+                            'bg-slate-700/50 text-slate-400'
+                }`}>
+                {isCaptain ? "C" : isVice ? "VC" : player.name.charAt(0)}
+            </div>
+
+            <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                    <h3 className={`font-bold truncate ${isCaptain ? 'text-yellow-400' : isBench ? 'text-slate-500' : 'text-white'}`}>
+                        {player.name}
+                    </h3>
+                    {isCaptain && <span className="text-[10px] font-bold px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 rounded border border-yellow-500/30 uppercase">Capt</span>}
+                    {isVice && <span className="text-[10px] font-bold px-1.5 py-0.5 bg-slate-500/20 text-slate-300 rounded border border-slate-500/30 uppercase">Vice</span>}
+                    {isBench && <span className="text-[10px] font-bold px-1.5 py-0.5 bg-slate-800 text-slate-600 rounded border border-slate-700 uppercase">Bench</span>}
+                </div>
+                <div className="text-xs text-slate-500 font-medium mt-0.5">
+                    {player.totalPoints} pts {isBench ? '(Excluded)' : `× ${isCaptain ? '2' : isVice ? '1.5' : '1'}`}
+                </div>
+            </div>
+
+            <div className="text-right">
+                <div className={`text-xl font-bold tabular-nums ${isCaptain ? 'text-yellow-400' : isBench ? 'text-slate-600' : 'text-white'}`}>
+                    {isBench ? player.totalPoints : player.contributedPoints}
+                </div>
+                <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">{isBench ? 'Raw' : 'Total'}</div>
+            </div>
+        </div>
     );
 }
