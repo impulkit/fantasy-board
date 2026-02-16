@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS matches (
     team_b         TEXT NOT NULL DEFAULT '',
     status         TEXT NOT NULL DEFAULT '',
     result         TEXT NOT NULL DEFAULT '',
-    last_synced_at TIMESTAMPTZ
+    last_synced_at TIMESTAMPTZ,
+    scorecard_raw  JSONB
 );
 
 -- Per-player points for each match

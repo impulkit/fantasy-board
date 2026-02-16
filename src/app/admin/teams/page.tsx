@@ -76,87 +76,88 @@ export default function TeamsPage() {
     }
 
     return (
-        <main className="page-container">
-            <header className="page-header animate-in">
-                <h1>👥 Manage Teams</h1>
-                <p>Add or remove fantasy cricket teams</p>
+        <main className="min-h-screen p-4 md:p-8 max-w-4xl mx-auto space-y-8">
+            <header className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-2xl font-black text-white">Manage Teams</h1>
+                    <p className="text-slate-400 text-sm">Create and organize fantasy squads</p>
+                </div>
+                <Link href="/admin" className="text-sm font-bold text-slate-500 hover:text-white transition-colors">
+                    Back to Dashboard
+                </Link>
             </header>
 
-            <div className="card animate-in" style={{ marginBottom: 24 }}>
-                <div className="section-title">Add a New Team</div>
-                <div className="input-group">
+            {/* Add Team Form */}
+            <div className="glass-panel p-6 space-y-4">
+                <h2 className="text-sm font-bold uppercase tracking-widest text-slate-500">Add New Team</h2>
+                <div className="flex flex-col md:flex-row gap-3">
                     <input
                         type="text"
                         value={teamName}
                         onChange={(e) => setTeamName(e.target.value)}
-                        placeholder="Team name"
+                        placeholder="Team Name (e.g. Royal Challengers)"
+                        className="flex-1 bg-slate-900/50 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
                         onKeyDown={(e) => e.key === "Enter" && handleAdd()}
                     />
                     <input
                         type="text"
                         value={owner}
                         onChange={(e) => setOwner(e.target.value)}
-                        placeholder="Owner name (optional)"
+                        placeholder="Owner Name"
+                        className="flex-1 bg-slate-900/50 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
                         onKeyDown={(e) => e.key === "Enter" && handleAdd()}
                     />
-                    <button className="btn btn-primary" onClick={handleAdd} disabled={!teamName.trim()}>
+                    <button
+                        onClick={handleAdd}
+                        disabled={!teamName.trim()}
+                        className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold px-6 py-3 rounded-lg transition-all shadow-lg shadow-indigo-500/20"
+                    >
                         Add Team
                     </button>
                 </div>
 
                 {message && (
-                    <div className={`status-message status-${message.type}`}>{message.text}</div>
+                    <div className={`p-4 rounded-lg text-sm font-medium ${message.type === 'error' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                            'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                        }`}>
+                        {message.text}
+                    </div>
                 )}
             </div>
 
+            {/* Team List */}
             {loading ? (
-                <div className="loading">
-                    <div className="spinner" />
-                    Loading teams...
-                </div>
+                <div className="text-center py-12 text-slate-500 animate-pulse">Loading roster...</div>
             ) : teams.length === 0 ? (
-                <div className="empty-state animate-in">
-                    <div className="empty-icon">👥</div>
-                    <p>No teams yet. Add your first team above!</p>
+                <div className="text-center py-12 text-slate-500">
+                    <div className="text-4xl mb-4">👥</div>
+                    <p>No teams found. Add one above to get started.</p>
                 </div>
             ) : (
-                <div className="table-wrap animate-in">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Team Name</th>
-                                <th>Owner</th>
-                                <th style={{ textAlign: "right" }}>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {teams.map((team) => (
-                                <tr key={team.id}>
-                                    <td style={{ color: "var(--text-muted)" }}>#{team.id}</td>
-                                    <td style={{ fontWeight: 600 }}>{team.team_name}</td>
-                                    <td style={{ color: "var(--text-secondary)" }}>{team.owner}</td>
-                                    <td style={{ textAlign: "right" }}>
-                                        <div className="flex gap-2 justify-end">
-                                            <Link
-                                                href={`/admin/teams/${team.id}`}
-                                                className="btn-secondary text-xs py-1 px-3"
-                                            >
-                                                Manage Roster
-                                            </Link>
-                                            <button
-                                                onClick={() => handleDelete(team.id, team.team_name)}
-                                                className="btn btn-danger"
-                                                style={{ padding: "6px 14px", fontSize: "0.8rem" }}
-                                            >
-                                                Remove
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {teams.map((team) => (
+                        <div key={team.id} className="glass-panel p-5 flex justify-between items-center group hover:bg-white/5 transition-colors">
+                            <div>
+                                <div className="text-xs text-slate-500 font-mono mb-1">TEAM #{team.id}</div>
+                                <h3 className="text-lg font-bold text-white group-hover:text-indigo-400 transition-colors">{team.team_name}</h3>
+                                <p className="text-sm text-slate-400">{team.owner}</p>
+                            </div>
+                            <div className="flex flex-col gap-2 text-right">
+                                <Link
+                                    href={`/admin/teams/${team.id}`}
+                                    className="text-xs font-bold text-indigo-400 hover:text-indigo-300 uppercase tracking-wider bg-indigo-500/10 hover:bg-indigo-500/20 px-3 py-1.5 rounded transition-colors"
+                                >
+                                    Manage Roster
+                                </Link>
+                                <button
+                                    onClick={() => handleDelete(team.id, team.team_name)}
+                                    className="text-xs font-bold text-rose-400 hover:text-rose-300 uppercase tracking-wider hover:underline"
+                                >
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+                    ))}
                 </div>
             )}
         </main>

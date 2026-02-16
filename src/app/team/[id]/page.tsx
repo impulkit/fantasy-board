@@ -54,7 +54,6 @@ async function getTeamDetails(teamId: number): Promise<TeamDetails | null> {
     }
 
     // 3. Get Points for these players
-    // Note: Ideally we filter by match date vs effective_from, but for v1 we sum all points
     const playerIds = roster.map((r) => r.api_player_id);
     const { data: points, error: pointsErr } = await supabase
         .from("player_match_points")
@@ -70,6 +69,7 @@ async function getTeamDetails(teamId: number): Promise<TeamDetails | null> {
         playerPointsMap.set(p.api_player_id, current + Number(p.points));
     });
 
+    // Sort: 1. Captain, 2. Vice Captain, 3. Points DESC
     const players: PlayerContribution[] = roster.map((r: any) => {
         const rawPoints = playerPointsMap.get(r.api_player_id) || 0;
         let multiplier = 1;
@@ -79,7 +79,7 @@ async function getTeamDetails(teamId: number): Promise<TeamDetails | null> {
         return {
             playerId: r.api_player_id,
             name: r.players?.display_name || r.api_player_id,
-            role: "PLAYER", // We didn't store role in DB yet, unfortunately! Only in Excel.
+            role: "PLAYER", // Role data needs better source
             isCaptain: r.is_captain,
             isViceCaptain: r.is_vicecaptain,
             totalPoints: rawPoints,
@@ -87,10 +87,14 @@ async function getTeamDetails(teamId: number): Promise<TeamDetails | null> {
         };
     });
 
-    // Sort by contributed points desc
-    players.sort((a, b) => b.contributedPoints - a.contributedPoints);
+    players.sort((a, b) => {
+        if (a.isCaptain) return -1;
+        if (b.isCaptain) return 1;
+        if (a.isViceCaptain) return -1;
+        if (b.isViceCaptain) return 1;
+        return b.contributedPoints - a.contributedPoints;
+    });
 
-    // Calculate team total from players + adjustment
     const manualAdjustment = Number(team.manual_adjustment_points || 0);
     const teamTotal = players.reduce((sum, p) => sum + p.contributedPoints, 0) + manualAdjustment;
 
@@ -105,6 +109,10 @@ async function getTeamDetails(teamId: number): Promise<TeamDetails | null> {
     };
 }
 
+function getAvatar(name: string) {
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff&size=200`;
+}
+
 export default async function TeamPage({ params }: { params: { id: string } }) {
     const teamId = parseInt(params.id);
     if (isNaN(teamId)) return notFound();
@@ -113,92 +121,95 @@ export default async function TeamPage({ params }: { params: { id: string } }) {
     if (!team) return notFound();
 
     return (
-        <main className="min-h-screen p-4 md:p-8 max-w-4xl mx-auto">
-            <div className="mb-6">
-                <Link href="/" className="text-secondary hover:underline">
-                    &larr; Back to Leaderboard
-                </Link>
-            </div>
+        <main className="min-h-screen p-4 pb-20 md:p-8 max-w-4xl mx-auto space-y-8">
+            <Link href="/" className="inline-flex items-center text-sm font-medium text-indigo-400 hover:text-indigo-300 transition-colors mb-4 group">
+                <span className="mr-2 group-hover:-translate-x-1 transition-transform">←</span> Back to Leaderboard
+            </Link>
 
-            <header className="glass-panel p-6 mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
-                <div>
-                    <h1 className="text-3xl font-bold gradient-text mb-2">{team.teamName}</h1>
-                    <p className="text-gray-400">Owner: <span className="text-white">{team.owner}</span></p>
+            {/* Hero Section */}
+            <header className="glass-panel p-6 flex flex-col md:flex-row items-center md:items-start gap-6 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+
+                <img
+                    src={getAvatar(team.owner)}
+                    alt={team.owner}
+                    className="w-24 h-24 rounded-full border-4 border-slate-700 shadow-xl z-10"
+                />
+
+                <div className="flex-1 text-center md:text-left z-10">
+                    <h1 className="text-3xl md:text-4xl font-extrabold text-white mb-2">{team.teamName}</h1>
+                    <p className="text-slate-400 font-medium">Managed by <span className="text-indigo-400 font-bold">{team.owner}</span></p>
                 </div>
-                <div className="text-right">
-                    <div className="text-sm text-gray-400 uppercase tracking-widest">Total Points</div>
-                    <div className="text-4xl font-black text-primary">{team.totalPoints.toLocaleString()}</div>
+
+                <div className="text-center md:text-right z-10 bg-slate-800/50 p-4 rounded-xl backdrop-blur-sm border border-white/5">
+                    <div className="text-xs uppercase tracking-widest text-slate-500 font-bold mb-1">Total Points</div>
+                    <div className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-br from-indigo-400 to-purple-400 tabular-nums">
+                        {team.totalPoints.toLocaleString()}
+                    </div>
                 </div>
             </header>
 
-            <section className="glass-panel overflow-hidden">
-                <div className="p-4 border-b border-white/5 flex justify-between items-center">
-                    <h2 className="text-xl font-semibold text-white">Squad</h2>
-                    <span className="text-xs text-secondary">
-                        Last Updated: {new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST
+            {/* Manual Adjustment Alert */}
+            {team.manualAdjustment !== 0 && (
+                <div className={`p-4 rounded-xl border ${team.manualAdjustment > 0 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'} flex items-center justify-between`}>
+                    <span className="font-medium text-sm">Manual Adjustment (Trades/Subs)</span>
+                    <span className="font-bold tabular-nums">
+                        {team.manualAdjustment > 0 ? '+' : ''}{team.manualAdjustment} pts
                     </span>
                 </div>
+            )}
 
-                <div className="overflow-x-auto">
-                    <table className="w-full">
-                        <thead className="bg-white/5 text-left text-xs uppercase tracking-wider text-gray-400">
-                            <tr>
-                                <th className="p-4">Player</th>
-                                <th className="p-4 text-center">Role</th>
-                                <th className="p-4 text-right">Match Pts</th>
-                                <th className="p-4 text-right">Multiplier</th>
-                                <th className="p-4 text-right">Total</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5">
-                            {team.players.map((player) => {
-                                let rowClass = "hover:bg-white/5 transition-colors border-b border-white/5 last:border-0";
-                                let nameClass = "font-medium text-white";
-                                let badge = null;
+            {/* Roster Grid */}
+            <section>
+                <h2 className="text-lg font-bold text-slate-400 uppercase tracking-widest mb-6 px-2">Starting XI</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {team.players.map((player) => {
+                        const isCaptain = player.isCaptain;
+                        const isVice = player.isViceCaptain;
 
-                                if (player.isCaptain) {
-                                    rowClass += " bg-blue-500/10 hover:bg-blue-500/20";
-                                    nameClass = "font-bold text-blue-400";
-                                    badge = <span className="ml-2 px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 text-xs font-bold border border-blue-500/30">C</span>;
-                                } else if (player.isViceCaptain) {
-                                    rowClass += " bg-green-500/10 hover:bg-green-500/20";
-                                    nameClass = "font-bold text-green-400";
-                                    badge = <span className="ml-2 px-2 py-0.5 rounded bg-green-500/20 text-green-400 text-xs font-bold border border-green-500/30">VC</span>;
-                                }
+                        let cardClass = "glass-panel p-4 flex items-center gap-4 hover:bg-white/5 transition-colors group relative overflow-hidden";
+                        let ringClass = "";
 
-                                return (
-                                    <tr key={player.playerId} className={rowClass}>
-                                        <td className={`p-4 ${nameClass}`}>
+                        if (isCaptain) {
+                            ringClass = "ring-2 ring-yellow-500/50 shadow-yellow-500/10 shadow-lg";
+                            cardClass += " bg-gradient-to-br from-slate-800/80 to-yellow-900/10";
+                        } else if (isVice) {
+                            ringClass = "ring-1 ring-slate-400/50";
+                        }
+
+                        return (
+                            <div key={player.playerId} className={`${cardClass} ${ringClass}`}>
+                                {/* Role/Status Icon */}
+                                <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-sm shadow-inner shrink-0 ${isCaptain ? 'bg-yellow-500 text-slate-900' :
+                                        isVice ? 'bg-slate-300 text-slate-900' :
+                                            'bg-slate-700/50 text-slate-400'
+                                    }`}>
+                                    {isCaptain ? "C" : isVice ? "VC" : player.name.charAt(0)}
+                                </div>
+
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <h3 className={`font-bold truncate ${isCaptain ? 'text-yellow-400' : 'text-white'}`}>
                                             {player.name}
-                                            {badge}
-                                        </td>
-                                        <td className="p-4 text-center text-gray-400 text-sm">
-                                            {player.role === "PLAYER" ? "—" : player.role}
-                                        </td>
-                                        <td className="p-4 text-right text-gray-300">
-                                            {player.totalPoints}
-                                        </td>
-                                        <td className="p-4 text-right text-gray-400 text-sm">
-                                            {player.isCaptain ? "2x" : player.isViceCaptain ? "1.5x" : "1x"}
-                                        </td>
-                                        <td className={`p-4 text-right font-bold ${player.isCaptain ? 'text-blue-400' : player.isViceCaptain ? 'text-green-400' : 'text-primary'}`}>
-                                            {player.contributedPoints}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
+                                        </h3>
+                                        {isCaptain && <span className="text-[10px] font-bold px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 rounded border border-yellow-500/30 uppercase">Capt</span>}
+                                        {isVice && <span className="text-[10px] font-bold px-1.5 py-0.5 bg-slate-500/20 text-slate-300 rounded border border-slate-500/30 uppercase">Vice</span>}
+                                    </div>
+                                    <div className="text-xs text-slate-500 font-medium mt-0.5">
+                                        {player.totalPoints} pts × {isCaptain ? '2' : isVice ? '1.5' : '1'}
+                                    </div>
+                                </div>
 
-                {team.manualAdjustment !== 0 && (
-                    <div className="p-4 border-t border-white/10 bg-white/5 flex justify-between items-center text-sm">
-                        <span className="text-gray-400">Manual Adjustments (Trades/Substitutions)</span>
-                        <span className={`font-bold ${team.manualAdjustment < 0 ? 'text-red-400' : 'text-green-400'}`}>
-                            {team.manualAdjustment > 0 ? '+' : ''}{team.manualAdjustment} pts
-                        </span>
-                    </div>
-                )}
+                                <div className="text-right">
+                                    <div className={`text-xl font-bold tabular-nums ${isCaptain ? 'text-yellow-400' : 'text-white'}`}>
+                                        {player.contributedPoints}
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Total</div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
             </section>
         </main>
     );

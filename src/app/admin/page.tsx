@@ -17,9 +17,10 @@ async function getStats() {
         );
 
         const [teamsRes, playersRes, matchesRes, syncRes] = await Promise.all([
-            supabase.from("fantasy_teams").select("id", { count: "exact", head: true }),
-            supabase.from("players").select("api_player_id", { count: "exact", head: true }),
-            supabase.from("matches").select("api_match_id", { count: "exact", head: true }),
+            // Use count: 'exact', head: true
+            supabase.from("fantasy_teams").select("*", { count: "exact", head: true }),
+            supabase.from("players").select("*", { count: "exact", head: true }),
+            supabase.from("matches").select("*", { count: "exact", head: true }),
             supabase.from("sync_state").select("last_completed_match_time").eq("id", 1).maybeSingle(),
         ]);
 
@@ -46,53 +47,54 @@ export default async function AdminPage() {
         : "Never";
 
     return (
-        <main className="page-container">
-            <header className="page-header animate-in">
-                <h1>⚙️ Admin Dashboard</h1>
-                <p>Manage your fantasy league</p>
+        <main className="min-h-screen p-4 md:p-8 max-w-5xl mx-auto space-y-12">
+            <header>
+                <h1 className="text-3xl font-extrabold tracking-tight text-white mb-2">⚙️ Admin Dashboard</h1>
+                <p className="text-slate-400">Manage your fantasy league settings and data.</p>
             </header>
 
-            <div className="card-grid stagger">
-                <div className="card stat-card">
-                    <div className="stat-value">{stats.teamCount}</div>
-                    <div className="stat-label">Fantasy Teams</div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="glass-panel p-6 text-center card-hover">
+                    <div className="text-4xl font-black text-indigo-400 mb-2">{stats.teamCount}</div>
+                    <div className="text-xs uppercase tracking-widest text-slate-500 font-bold">Fantasy Teams</div>
                 </div>
-                <div className="card stat-card">
-                    <div className="stat-value">{stats.playerCount}</div>
-                    <div className="stat-label">Players</div>
+                <div className="glass-panel p-6 text-center card-hover">
+                    <div className="text-4xl font-black text-purple-400 mb-2">{stats.playerCount}</div>
+                    <div className="text-xs uppercase tracking-widest text-slate-500 font-bold">Players</div>
                 </div>
-                <div className="card stat-card">
-                    <div className="stat-value">{stats.matchCount}</div>
-                    <div className="stat-label">Matches Synced</div>
-                </div>
-            </div>
-
-            <div className="section">
-                <div className="section-title">Last Sync</div>
-                <div className="card" style={{ padding: "16px 24px" }}>
-                    <span style={{ color: "var(--text-secondary)" }}>{lastSyncFormatted}</span>
+                <div className="glass-panel p-6 text-center card-hover">
+                    <div className="text-4xl font-black text-emerald-400 mb-2">{stats.matchCount}</div>
+                    <div className="text-xs uppercase tracking-widest text-slate-500 font-bold">Matches Synced</div>
                 </div>
             </div>
 
-            <div className="section" style={{ marginTop: 32 }}>
-                <div className="section-title">Quick Actions</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 12 }} className="stagger">
-                    <Link href="/admin/teams" className="card link-card">
-                        <span className="link-icon">👥</span>
+            <section className="space-y-4">
+                <h2 className="text-sm font-bold uppercase tracking-widest text-slate-500 px-2">Last Sync</h2>
+                <div className="glass-panel p-4 flex items-center justify-between">
+                    <span className="text-slate-400">Last successful sync completed at:</span>
+                    <span className="text-white font-mono">{lastSyncFormatted}</span>
+                </div>
+            </section>
+
+            <section className="space-y-4">
+                <h2 className="text-sm font-bold uppercase tracking-widest text-slate-500 px-2">Quick Actions</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Link href="/admin/teams" className="glass-panel p-6 flex items-center gap-4 hover:bg-white/5 transition-colors group">
+                        <span className="text-4xl group-hover:scale-110 transition-transform">👥</span>
                         <div>
-                            <div className="link-label">Manage Teams</div>
-                            <div className="link-desc">Add or remove fantasy teams</div>
+                            <div className="font-bold text-white text-lg">Manage Teams</div>
+                            <div className="text-sm text-slate-400">Add or remove fantasy roster teams</div>
                         </div>
                     </Link>
-                    <Link href="/admin/sync" className="card link-card">
-                        <span className="link-icon">🔄</span>
+                    <Link href="/admin/sync" className="glass-panel p-6 flex items-center gap-4 hover:bg-white/5 transition-colors group">
+                        <span className="text-4xl group-hover:scale-110 transition-transform">🔄</span>
                         <div>
-                            <div className="link-label">Sync Cricket Data</div>
-                            <div className="link-desc">Fetch latest match scorecards</div>
+                            <div className="font-bold text-white text-lg">Sync Cricket Data</div>
+                            <div className="text-sm text-slate-400">Fetch latest match scorecards automatically</div>
                         </div>
                     </Link>
                 </div>
-            </div>
+            </section>
         </main>
     );
 }
