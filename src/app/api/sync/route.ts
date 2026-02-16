@@ -71,7 +71,11 @@ function getStartTimeISO(m: any): string | null {
 
 function seriesFilter(matches: any[]) {
   const seriesId = process.env.CRICKETDATA_SERIES_ID!;
-  return matches.filter((m) => m?.series?.id === seriesId);
+  return matches.filter((m) => {
+    // CricketData API uses different field names across versions
+    const sid = m?.series_id || m?.series?.id || m?.seriesId || m?.series?.objectId || "";
+    return sid === seriesId;
+  });
 }
 
 // ---- Auth helper ----
@@ -282,6 +286,15 @@ async function runSync(overrideLastSyncTime?: number) {
       afterBoundary: toProcess.length,
       syncBoundaryUsed: new Date(last).toISOString(),
       seriesId: process.env.CRICKETDATA_SERIES_ID ?? "(not set)",
+      sampleMatch: all.length > 0 ? {
+        id: all[0].id,
+        series_id: all[0].series_id,
+        series: all[0].series,
+        seriesId: all[0].seriesId,
+        name: all[0].name,
+        status: all[0].status,
+        matchEnded: all[0].matchEnded,
+      } : null,
     },
   };
 }
