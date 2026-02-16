@@ -275,6 +275,14 @@ async function runSync(overrideLastSyncTime?: number) {
   return {
     processed,
     boundaryISO: processed > 0 ? new Date(maxTime).toISOString() : stateRow?.last_completed_match_time ?? null,
+    debug: {
+      totalMatchesFromAPI: all.length,
+      matchesInSeries: wc.length,
+      completedInSeries: completed.length,
+      afterBoundary: toProcess.length,
+      syncBoundaryUsed: new Date(last).toISOString(),
+      seriesId: process.env.CRICKETDATA_SERIES_ID ?? "(not set)",
+    },
   };
 }
 
@@ -314,7 +322,14 @@ export async function POST(req: Request) {
   if (auth) return auth;
 
   try {
-    const out = await runSync();
+    let overrideTime: number | undefined;
+    const fromParam = body?.from;
+    if (fromParam) {
+      overrideTime = new Date(fromParam).getTime();
+      if (isNaN(overrideTime)) throw new Error("Invalid 'from' date format (use YYYY-MM-DD)");
+    }
+
+    const out = await runSync(overrideTime);
     return NextResponse.json({ ok: true, ...out });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? String(e) }, { status: 500 });

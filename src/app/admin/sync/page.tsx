@@ -4,8 +4,10 @@ import { useState } from "react";
 
 export default function SyncPage() {
     const [adminKey, setAdminKey] = useState("");
+    const [fromDate, setFromDate] = useState("");
     const [isSyncing, setIsSyncing] = useState(false);
     const [result, setResult] = useState<{ type: string; text: string } | null>(null);
+    const [debugInfo, setDebugInfo] = useState<any>(null);
 
     async function handleSync() {
         if (!adminKey.trim()) {
@@ -15,12 +17,18 @@ export default function SyncPage() {
 
         setIsSyncing(true);
         setResult({ type: "info", text: "Syncing cricket data… this may take a moment." });
+        setDebugInfo(null);
 
         try {
+            const payload: any = { key: adminKey.trim() };
+            if (fromDate.trim()) {
+                payload.from = fromDate.trim();
+            }
+
             const res = await fetch("/api/sync", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ key: adminKey.trim() }),
+                body: JSON.stringify(payload),
             });
 
             const data = await res.json();
@@ -42,6 +50,10 @@ export default function SyncPage() {
                     type: "success",
                     text: `Sync complete! ${data.processed} match(es) processed. Boundary: ${boundary}`,
                 });
+            }
+
+            if (data.debug) {
+                setDebugInfo(data.debug);
             }
         } catch (err: any) {
             setResult({ type: "error", text: err?.message || "Network error during sync." });
@@ -67,6 +79,13 @@ export default function SyncPage() {
                         placeholder="Admin key"
                         onKeyDown={(e) => e.key === "Enter" && handleSync()}
                     />
+                    <input
+                        type="date"
+                        value={fromDate}
+                        onChange={(e) => setFromDate(e.target.value)}
+                        style={{ maxWidth: 180 }}
+                        title="Sync from date (leave empty to use last sync boundary)"
+                    />
                     <button
                         className="btn btn-primary"
                         onClick={handleSync}
@@ -82,9 +101,28 @@ export default function SyncPage() {
                         )}
                     </button>
                 </div>
+                <p style={{ color: "var(--text-muted)", fontSize: "0.75rem", marginTop: 6 }}>
+                    Set a &quot;from&quot; date to re-sync all matches from that date onward. Leave blank for incremental sync.
+                </p>
 
                 {result && (
                     <div className={`status-message status-${result.type}`}>{result.text}</div>
+                )}
+
+                {debugInfo && (
+                    <div style={{ marginTop: 16, padding: 16, background: "rgba(255,255,255,0.03)", borderRadius: 8, fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                        <div style={{ fontWeight: 700, marginBottom: 8, color: "var(--text-primary)" }}>Diagnostic Info</div>
+                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                            <tbody>
+                                {Object.entries(debugInfo).map(([key, val]) => (
+                                    <tr key={key} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                                        <td style={{ padding: "4px 8px", color: "var(--text-muted)" }}>{key}</td>
+                                        <td style={{ padding: "4px 8px", fontFamily: "monospace" }}>{String(val)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 )}
             </div>
 
