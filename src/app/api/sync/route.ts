@@ -98,6 +98,15 @@ async function runSync(overrideLastSyncTime?: number) {
 
   if (overrideLastSyncTime !== undefined) {
     last = overrideLastSyncTime;
+
+    // Clean up bad data from previous failed syncs
+    // Delete team_match_points for non-seed matches
+    await supabase.from("team_match_points").delete().not("api_match_id", "like", "seed-%");
+    // Delete player_match_points for non-seed matches
+    await supabase.from("player_match_points").delete().not("api_match_id", "like", "seed-%");
+    // Delete 'unknown' player entries
+    await supabase.from("player_match_points").delete().eq("api_player_id", "unknown");
+    await supabase.from("players").delete().eq("api_player_id", "unknown");
   } else {
     const { data, error: stateErr } = await supabase
       .from("sync_state")

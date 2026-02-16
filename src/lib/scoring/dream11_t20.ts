@@ -173,16 +173,19 @@ export function normalizeMatchScorecardToPlayerStats(
   for (const inn of innings) {
     // Batting
     for (const b of inn?.batting || []) {
-      const p = getPlayer(b.name);
-      p.runs += Number(b.runs || 0);
-      p.ballsFaced += Number(b.balls || b.ballsFaced || 0);
-      const fours = b.fours ?? b["4s"] ?? 0;
-      const sixes = b.sixes ?? b["6s"] ?? 0;
+      // CricketData API uses 'batsman' for the name, not 'name'
+      const playerName = b.batsman || b.name || "";
+      if (!playerName) continue;
+      const p = getPlayer(playerName);
+      p.runs += Number(b.r || b.R || b.runs || 0);
+      p.ballsFaced += Number(b.b || b.B || b.balls || b.ballsFaced || 0);
+      const fours = b["4s"] ?? b.fours ?? 0;
+      const sixes = b["6s"] ?? b.sixes ?? 0;
       p.fours += Number(fours || 0);
       p.sixes += Number(sixes || 0);
 
       // Check if dismissed
-      const dismissal = String(b.dismissal || b.howOut || "").toLowerCase();
+      const dismissal = String(b["dismissal-info"] || b.dismissal || b.howOut || "").toLowerCase();
       if (dismissal && dismissal !== "not out" && dismissal !== "batting" && dismissal !== "") {
         p.isDismissed = true;
       }
@@ -190,16 +193,21 @@ export function normalizeMatchScorecardToPlayerStats(
 
     // Bowling
     for (const bw of inn?.bowling || []) {
-      const p = getPlayer(bw.name);
-      p.wickets += Number(bw.wickets || 0);
-      p.maidens += Number(bw.maidens || 0);
-      p.overs += Number(bw.overs || 0);
-      p.runsConceded += Number(bw.runs || bw.runsConceded || 0);
+      // CricketData API uses 'bowler' for the name, not 'name'
+      const playerName = bw.bowler || bw.name || "";
+      if (!playerName) continue;
+      const p = getPlayer(playerName);
+      p.wickets += Number(bw.w || bw.W || bw.wickets || 0);
+      p.maidens += Number(bw.m || bw.M || bw.maidens || 0);
+      p.overs += Number(bw.o || bw.O || bw.overs || 0);
+      p.runsConceded += Number(bw.r || bw.R || bw.runs || bw.runsConceded || 0);
     }
 
     // Fielding
     for (const f of inn?.fielding || []) {
-      const p = getPlayer(f.name);
+      const playerName = f.fielder || f.name || "";
+      if (!playerName) continue;
+      const p = getPlayer(playerName);
       p.catches += Number(f.catches || 0);
       p.stumpings += Number(f.stumpings || 0);
       // CricketData API doesn't always distinguish direct/indirect
