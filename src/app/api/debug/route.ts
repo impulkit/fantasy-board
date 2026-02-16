@@ -11,14 +11,36 @@ export async function GET() {
             { auth: { persistSession: false } }
         );
 
-        // 1. Check Fetch
+        // 1. Leaderboard cache
         const { data: cache, error: cacheErr } = await supabase.from("leaderboard_cache").select("*");
         const { data: teams, error: teamsErr } = await supabase.from("fantasy_teams").select("*");
 
-        // 2. Check Join
-        const { data: joined, error: joinErr } = await supabase
-            .from("leaderboard_cache")
-            .select("*, fantasy_teams(*)");
+        // 2. Roster player IDs (from seed)
+        const { data: roster } = await supabase
+            .from("fantasy_team_players")
+            .select("fantasy_team_id, api_player_id, is_captain, is_vicecaptain")
+            .limit(200);
+
+        const rosterPlayerIds = [...new Set((roster || []).map((r: any) => r.api_player_id))].sort();
+
+        // 3. Synced player IDs (from API)
+        const { data: syncedPlayers } = await supabase
+            .from("player_match_points")
+            .select("api_player_id")
+            .limit(500);
+
+        const syncedPlayerIds = [...new Set((syncedPlayers || []).map((p: any) => p.api_player_id))].sort();
+
+        // 4. Find mismatches
+        const inRosterNotSynced = rosterPlayerIds.filter((id: string) => !syncedPlayerIds.includes(id));
+        const inSyncedNotRoster = syncedPlayerIds.filter((id: string) => !rosterPlayerIds.includes(id));
+
+        // 5. Team match points
+        const { data: tmpData } = await supabase
+            .from("team_match_points")
+            .select("fantasy_team_id, match_id, points_total")
+            .order("fantasy_team_id")
+            .limit(200);
 
         return NextResponse.json({
             env: {
@@ -29,8 +51,16 @@ export async function GET() {
             cacheError: cacheErr,
             teams,
             teamsError: teamsErr,
-            joined,
-            joinedError: joinErr
+            playerIdAnalysis: {
+                rosterPlayerIds,
+                syncedPlayerIds: syncedPlayerIds.slice(0, 50),
+                inRosterNotSynced,
+                inSyncedNotRoster: inSyncedNotRoster.slice(0, 50),
+                rosterCount: rosterPlayerIds.length,
+                syncedCount: syncedPlayerIds.length,
+                mismatchCount: inRosterNotSynced.length,
+            },
+            teamMatchPoints: tmpData,
         });
     } catch (e: any) {
         return NextResponse.json({ error: e.message });
