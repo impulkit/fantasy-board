@@ -123,14 +123,7 @@ async function runSync(overrideLastSyncTime?: number) {
   if (overrideLastSyncTime !== undefined) {
     last = overrideLastSyncTime;
 
-    // Clean up bad data from previous failed syncs
-    // Delete team_match_points for non-seed matches
-    await supabase.from("team_match_points").delete().not("api_match_id", "like", "seed-%");
-    // Delete player_match_points for non-seed matches
-    await supabase.from("player_match_points").delete().not("api_match_id", "like", "seed-%");
-    // Delete 'unknown' player entries
-    await supabase.from("player_match_points").delete().eq("api_player_id", "unknown");
-    await supabase.from("players").delete().eq("api_player_id", "unknown");
+    // We no longer delete data on force sync. It acts as an idempotent upsert.
   } else {
     const { data, error: stateErr } = await supabase
       .from("sync_state")
@@ -207,10 +200,11 @@ async function runSync(overrideLastSyncTime?: number) {
       try {
         scorecard = await fetchScorecard(matchId);
       } catch (e: any) {
-        // If API fails (e.g. rate limit), check if we have *any* old cache?
-        // (Actually we already checked existingMatch above).
         console.error(`Failed to fetch scorecard for ${matchId}: ${e.message}`);
-        // If we have no scorecard, we can't process this match. Skip.
+        if (e.message.includes("credits") || e.message.includes("hits") || e.message.includes("limit")) {
+          console.log("API Limits reached. Halting fetch loop safely to preserve progress.");
+          break;
+        }
         continue;
       }
     }
@@ -292,7 +286,7 @@ async function runSync(overrideLastSyncTime?: number) {
 
       const { data: roster, error: rosterErr } = await supabase
         .from("fantasy_team_players")
-        .select("api_player_id, is_captain, is_vicecaptain, is_bench")
+        .select("api_player_id, is_captain, is_vicecaptain, is_bench, effective_from_time, effective_to_time")
         .eq("fantasy_team_id", teamId);
 
       if (rosterErr) throw new Error(rosterErr.message);
@@ -300,6 +294,14 @@ async function runSync(overrideLastSyncTime?: number) {
       let total = 0;
       for (const r of roster || []) {
         if (r.is_bench) continue; // Skip bench players
+
+        // Ledger check: Was this player dynamically on the roster when this match occurred?
+        const matchTime = new Date(startTimeISO).getTime();
+        const fromTime = r.effective_from_time ? new Date(r.effective_from_time).getTime() : 0;
+        const toTime = r.effective_to_time ? new Date(r.effective_to_time).getTime() : Infinity;
+
+        // If player was traded onto team after match, or dropped before match, skip their points!
+        if (matchTime < fromTime || matchTime > toTime) continue;
 
         const raw = pointsByPlayer.get(String(r.api_player_id)) || 0;
         let mult = 1;

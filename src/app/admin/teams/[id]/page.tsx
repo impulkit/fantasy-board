@@ -53,8 +53,9 @@ export default function EditTeamPage({ params }: { params: { id: string } }) {
         // 2. Roster
         const { data: rosterData } = await sb
             .from("fantasy_team_players")
-            .select("api_player_id, is_captain, is_vicecaptain, is_bench, players(display_name)")
+            .select("api_player_id, is_captain, is_vicecaptain, is_bench, effective_to_time, players(display_name)")
             .eq("fantasy_team_id", teamId)
+            .is("effective_to_time", null) // Do not show historically dropped players
             .order("is_bench", { ascending: true }); // Active first
 
         setRoster((rosterData as any[]) || []);
@@ -91,9 +92,16 @@ export default function EditTeamPage({ params }: { params: { id: string } }) {
         if (!confirm("Remove this player?")) return;
         const sb = getSupabase();
         if (!sb) return;
+
+        // Instead of destructive DELETE, flag them as dropped to preserve their historical match points!
         const { error } = await sb
             .from("fantasy_team_players")
-            .delete()
+            .update({
+                is_bench: true,
+                is_captain: false,
+                is_vicecaptain: false,
+                effective_to_time: new Date().toISOString()
+            })
             .eq("fantasy_team_id", teamId)
             .eq("api_player_id", pid);
 
@@ -110,13 +118,16 @@ export default function EditTeamPage({ params }: { params: { id: string } }) {
         const sb = getSupabase();
         if (!sb) return;
 
-        const { error } = await sb.from("fantasy_team_players").insert({
+        // Upsert allows us to "revive" a previously dropped player using the same constraint row
+        const { error } = await sb.from("fantasy_team_players").upsert({
             fantasy_team_id: teamId,
             api_player_id: newPlayerId,
             is_captain: false,
             is_vicecaptain: false,
-            is_bench: true // Default to bench when adding? Safer.
-        });
+            is_bench: true, // Default to bench when adding
+            effective_from_time: new Date().toISOString(),
+            effective_to_time: null
+        }, { onConflict: "fantasy_team_id, api_player_id" });
 
         if (error) setMessage({ type: "error", text: error.message });
         else {
