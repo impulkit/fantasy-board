@@ -38,38 +38,17 @@ async function fetchMatches() {
   const apikey = process.env.CRICKETDATA_API_KEY!;
   const seriesId = process.env.CRICKETDATA_SERIES_ID!;
 
-  let allMatches: any[] = [];
-  let offset = 0;
+  // Use series_info endpoint to get ALL matches for this specific series
+  const url = `${CRIC_BASE}/series_info?apikey=${apikey}&offset=0&id=${encodeURIComponent(seriesId)}`;
+  const json = await fetchJsonWithRetry(url);
 
-  while (true) {
-    const url = `${CRIC_BASE}/series_info?apikey=${apikey}&offset=${offset}&id=${encodeURIComponent(seriesId)}`;
-    const json = await fetchJsonWithRetry(url);
-
-    // Check for API rate limit
-    if (json?.status === "failure" || json?.reason) {
-      throw new Error(`CricketData API error: ${json?.reason || json?.status || "unknown"} (credits: ${json?.info?.credits ?? "?"}, hitsToday: ${json?.info?.hitsToday ?? "?"})`);
-    }
-
-    const matches = json?.data?.matchList ?? json?.data?.matches ?? json?.data ?? [];
-    if (!Array.isArray(matches) || matches.length === 0) {
-      break;
-    }
-
-    allMatches = allMatches.concat(matches);
-
-    // Check if we hit the limit
-    if (json?.info?.totalRows && allMatches.length >= json.info.totalRows) {
-      break;
-    }
-
-    // If fewer than standard 25 are returned, we're likely on the last page anyway
-    if (matches.length < 25) {
-      break;
-    }
-    offset += matches.length;
+  // Check for API rate limit
+  if (json?.status === "failure" || json?.reason) {
+    throw new Error(`CricketData API error: ${json?.reason || json?.status || "unknown"} (credits: ${json?.info?.credits ?? "?"}, hitsToday: ${json?.info?.hitsToday ?? "?"})`);
   }
 
-  return allMatches;
+  const matches = json?.data?.matchList ?? json?.data?.matches ?? json?.data ?? [];
+  return matches;
 }
 
 async function fetchScorecard(matchId: string) {
@@ -81,8 +60,23 @@ async function fetchScorecard(matchId: string) {
 }
 
 function isCompletedMatch(m: any) {
+  if (m?.matchEnded === true) return true;
+
   const status = String(m?.status ?? "").toLowerCase();
-  return m?.matchEnded === true || status.includes("ended") || status.includes("completed");
+
+  if (
+    status.includes("ended") ||
+    status.includes("completed") ||
+    status.includes("won") ||
+    status.includes("result") ||
+    status.includes("tie") ||
+    status.includes("abandon") ||
+    status.includes("over")
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 function getStartTimeISO(m: any): string | null {
