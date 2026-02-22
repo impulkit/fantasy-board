@@ -37,17 +37,39 @@ async function fetchJsonWithRetry(url: string, tries = 3) {
 async function fetchMatches() {
   const apikey = process.env.CRICKETDATA_API_KEY!;
   const seriesId = process.env.CRICKETDATA_SERIES_ID!;
-  // Use series_info endpoint to get ALL matches for this specific series
-  const url = `${CRIC_BASE}/series_info?apikey=${apikey}&offset=0&id=${encodeURIComponent(seriesId)}`;
-  const json = await fetchJsonWithRetry(url);
 
-  // Check for API rate limit
-  if (json?.status === "failure" || json?.reason) {
-    throw new Error(`CricketData API error: ${json?.reason || json?.status || "unknown"} (credits: ${json?.info?.credits ?? "?"}, hitsToday: ${json?.info?.hitsToday ?? "?"})`);
+  let allMatches: any[] = [];
+  let offset = 0;
+
+  while (true) {
+    const url = `${CRIC_BASE}/series_info?apikey=${apikey}&offset=${offset}&id=${encodeURIComponent(seriesId)}`;
+    const json = await fetchJsonWithRetry(url);
+
+    // Check for API rate limit
+    if (json?.status === "failure" || json?.reason) {
+      throw new Error(`CricketData API error: ${json?.reason || json?.status || "unknown"} (credits: ${json?.info?.credits ?? "?"}, hitsToday: ${json?.info?.hitsToday ?? "?"})`);
+    }
+
+    const matches = json?.data?.matchList ?? json?.data?.matches ?? json?.data ?? [];
+    if (!Array.isArray(matches) || matches.length === 0) {
+      break;
+    }
+
+    allMatches = allMatches.concat(matches);
+
+    // Check if we hit the limit
+    if (json?.info?.totalRows && allMatches.length >= json.info.totalRows) {
+      break;
+    }
+
+    // If fewer than standard 25 are returned, we're likely on the last page anyway
+    if (matches.length < 25) {
+      break;
+    }
+    offset += matches.length;
   }
 
-  const matches = json?.data?.matchList ?? json?.data?.matches ?? json?.data ?? [];
-  return matches;
+  return allMatches;
 }
 
 async function fetchScorecard(matchId: string) {
@@ -131,7 +153,7 @@ async function runSync(overrideLastSyncTime?: number) {
     // Fetch previously synced API match IDs from `matches` table to avoid using time boundaries strictly
     const { data: dbMatches, error: dbErr } = await supabase.from("matches").select("api_match_id");
     if (!dbErr && dbMatches) {
-       dbMatches.forEach(m => syncedMatchIds.add(String(m.api_match_id)));
+      dbMatches.forEach(m => syncedMatchIds.add(String(m.api_match_id)));
     }
   }
 
@@ -152,9 +174,9 @@ async function runSync(overrideLastSyncTime?: number) {
   // 4) process matches: if no override, use ID-based tracking to avoid skipping chronologically out-of-order matches
   let toProcess = [];
   if (overrideLastSyncTime !== undefined) {
-     toProcess = completed.filter((m: any) => new Date(m.startTimeISO).getTime() > last);
+    toProcess = completed.filter((m: any) => new Date(m.startTimeISO).getTime() > last);
   } else {
-     toProcess = completed.filter((m: any) => !syncedMatchIds.has(m.id));
+    toProcess = completed.filter((m: any) => !syncedMatchIds.has(m.id));
   }
 
   let processed = 0;

@@ -54,6 +54,13 @@ async function getTeamDetails(teamId: number): Promise<TeamDetails | null> {
 
     if (teamErr || !team) return null;
 
+    // 1b. Get Cached Leaderboard points (truth for team total)
+    const { data: lbCache } = await supabase
+        .from("leaderboard_cache")
+        .select("total_points")
+        .eq("fantasy_team_id", teamId)
+        .maybeSingle();
+
     // 2. Get Roster
     const { data: roster, error: rosterErr } = await supabase
         .from("fantasy_team_players")
@@ -144,7 +151,12 @@ async function getTeamDetails(teamId: number): Promise<TeamDetails | null> {
     benchPlayers.sort((a, b) => b.totalPoints - a.totalPoints);
 
     const manualAdjustment = Number(team.manual_adjustment_points || 0);
-    const teamTotal = activePlayers.reduce((sum, p) => sum + p.contributedPoints, 0) + manualAdjustment;
+
+    // Team total MUST accurately mirror leaderboard_cache (so it aligns with main page)
+    // because dynamic player sums mistakenly accumulate points earned by currently-rostered players *before* they joined.
+    const teamTotal = lbCache
+        ? Number(lbCache.total_points || 0)
+        : (activePlayers.reduce((sum, p) => sum + p.contributedPoints, 0) + manualAdjustment);
 
     return {
         id: team.id,
@@ -197,6 +209,9 @@ export default async function TeamPage({ params }: { params: { id: string } }) {
                     <div className="text-xs uppercase tracking-widest text-slate-500 font-bold mb-1">Total Points</div>
                     <div className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-br from-indigo-400 to-purple-400 tabular-nums">
                         {team.totalPoints.toLocaleString()}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-2 max-w-[200px] md:ml-auto leading-tight">
+                        Total aligns with the main leaderboard. Individual player points show lifetime tournament scores and include points earned before trades.
                     </div>
                 </div>
             </header>
@@ -300,9 +315,9 @@ function PlayerCard({ player, isBench = false }: { player: PlayerContribution, i
         <div className={`${cardClass} ${ringClass}`}>
             {/* Role/Status Icon */}
             <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-sm shadow-inner shrink-0 ${isCaptain ? 'bg-yellow-500 text-slate-900' :
-                    isVice ? 'bg-slate-300 text-slate-900' :
-                        isBench ? 'bg-slate-800 text-slate-600' :
-                            'bg-slate-700/50 text-slate-400'
+                isVice ? 'bg-slate-300 text-slate-900' :
+                    isBench ? 'bg-slate-800 text-slate-600' :
+                        'bg-slate-700/50 text-slate-400'
                 }`}>
                 {isCaptain ? "C" : isVice ? "VC" : player.name.charAt(0)}
             </div>
