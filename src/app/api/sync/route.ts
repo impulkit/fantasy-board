@@ -102,6 +102,7 @@ async function runSync(overrideLastSyncTime?: number) {
   // 1) last sync time
   let last = 0;
   let stateRow: { last_completed_match_time: string } | null = null;
+  const syncedMatchIds = new Set<string>();
 
   if (overrideLastSyncTime !== undefined) {
     last = overrideLastSyncTime;
@@ -126,6 +127,12 @@ async function runSync(overrideLastSyncTime?: number) {
     if (stateRow?.last_completed_match_time) {
       last = new Date(stateRow.last_completed_match_time).getTime();
     }
+
+    // Fetch previously synced API match IDs from `matches` table to avoid using time boundaries strictly
+    const { data: dbMatches, error: dbErr } = await supabase.from("matches").select("api_match_id");
+    if (!dbErr && dbMatches) {
+       dbMatches.forEach(m => syncedMatchIds.add(String(m.api_match_id)));
+    }
   }
 
   // 2) fetch matches from series_info (already filtered to our series)
@@ -142,8 +149,13 @@ async function runSync(overrideLastSyncTime?: number) {
     .filter((m: any) => !!m.startTimeISO)
     .sort((a: any, b: any) => new Date(a.startTimeISO).getTime() - new Date(b.startTimeISO).getTime());
 
-  // 4) process matches after last sync boundary
-  const toProcess = completed.filter((m: any) => new Date(m.startTimeISO).getTime() > last);
+  // 4) process matches: if no override, use ID-based tracking to avoid skipping chronologically out-of-order matches
+  let toProcess = [];
+  if (overrideLastSyncTime !== undefined) {
+     toProcess = completed.filter((m: any) => new Date(m.startTimeISO).getTime() > last);
+  } else {
+     toProcess = completed.filter((m: any) => !syncedMatchIds.has(m.id));
+  }
 
   let processed = 0;
   let maxTime = last;
