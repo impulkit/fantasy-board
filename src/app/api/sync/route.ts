@@ -187,14 +187,17 @@ async function runSync(overrideLastSyncTime?: number) {
     // Check DB cache first
     let scorecard: any = null;
     let usedCache = false;
+    let hasScorecardColumn = true;
 
-    const { data: existingMatch } = await supabase
+    const { data: existingMatch, error: cacheErr } = await supabase
       .from("matches")
       .select("scorecard_raw")
       .eq("api_match_id", matchId)
       .maybeSingle();
 
-    if (existingMatch?.scorecard_raw) {
+    if (cacheErr && cacheErr.message.includes("Could not find")) {
+      hasScorecardColumn = false;
+    } else if (existingMatch?.scorecard_raw) {
       scorecard = existingMatch.scorecard_raw;
       usedCache = true;
       console.log(`Using cached scorecard for ${matchId}`);
@@ -262,7 +265,8 @@ async function runSync(overrideLastSyncTime?: number) {
       last_synced_at: new Date().toISOString(),
     };
 
-    if (!usedCache && scorecard) {
+    // Safely skip if column is missing from Supabase schema
+    if (!usedCache && scorecard && hasScorecardColumn) {
       matchUpsert.scorecard_raw = scorecard;
     }
 
